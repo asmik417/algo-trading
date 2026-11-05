@@ -49,4 +49,5 @@ pages/        one file per route
 - `src/types/api.ts` mirrors `../docs/API_CONTRACT.md` exactly. A needed change goes under "Proposed changes" in that file, not into the types.
 - Never show `null`; unavailable values render as "—", and a scoring pillar with no data says "Unavailable — not scored" (never 0).
 - Paper money only: tracking always sends `{ profile_id, suggestion_id }`.
+- My Picks results are `WatchlistHit | WatchlistMiss`; narrow with `isMiss()` (`lib/watchlist.ts`) and read only `symbol` and `error` on a miss.
 - The Strategies form is generated from `param-spec` (types, limits, options); the only name it knows is the reserved section `Scoring weights`.
