@@ -102,8 +102,7 @@ Rules: `GET /profiles/{id}/runs` returns **full runs only**; `run_id=latest` mea
 
 ```json
 Run gains:   "kind": "full" | "watchlist",  "symbols": string[] | null
-WatchlistItem = { ...SuggestionSummary, "filters": FilterResult, "error": string | null }
-             // error is set (and score fields null) when the symbol is unknown or cannot be scored
+WatchlistItem = WatchlistHit | WatchlistMiss   // see the TS below; a miss carries exactly ten fields with filters null
 ```
 `SuggestionSource` gains `"watchlist"`.
 
