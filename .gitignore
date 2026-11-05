@@ -1,0 +1,29 @@
+# secrets
+backend/.env
+.env
+
+# python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# data, caches, logs
+backend/data/cache/
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+backend/logs/
+logs/
+*.log
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# os / editors
+.DS_Store
+.vscode/
+.idea/

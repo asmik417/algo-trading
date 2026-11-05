@@ -1,0 +1,4 @@
+dist
+node_modules
+# Copied verbatim from docs/API_CONTRACT.md; never reformat.
+src/types/api.ts
