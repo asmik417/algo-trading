@@ -87,3 +87,9 @@ def test_stock_detail(client, explore):
     assert short["indicators"]["rsi"] is None and short["metrics"]["change_1m_pct"] is None  # unavailable, not 0
     assert client.get("/api/v1/stocks/OLDCO").status_code == 404
     assert client.get("/api/v1/stocks/NOPE").status_code == 404
+
+
+def test_search_with_no_match_is_empty_not_500(client, explore):
+    body = client.get("/api/v1/stocks?search=zzzzqq").json()
+    assert body == {"trading_day": END, "total": 0, "items": []}
+    assert client.get("/api/v1/stocks?search=zzzzqq&sort=change_3m_pct&order=asc").json()["total"] == 0

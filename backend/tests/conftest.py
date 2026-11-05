@@ -19,6 +19,22 @@ from fastapi.testclient import TestClient  # noqa: E402
 TEST_LOGIN = {"username": "tester", "password": "test-password"}
 
 
+@pytest.fixture(autouse=True)
+def no_network_fundamentals(tmp_path, monkeypatch):
+    """No test may call yfinance or read/write the real fundamentals cache. Tests that need fundamentals
+    install their own fake on top of this (see tests/test_suggestion_runs.py::market)."""
+    from app.engine import config as engine_config
+    from app.engine.data import fetcher
+
+    monkeypatch.setattr(engine_config, "FUNDAMENTALS_CACHE_DIR", str(tmp_path / "fundamentals"))
+    monkeypatch.setattr(fetcher, "fetch_fundamental_bundle",
+                        lambda symbol: {"info": {}, "quarterly": [], "cashflow": [], "ok": False})
+    # NIFTY benchmark: unavailable unless a test fakes it (tests/test_tracker.py does).
+    from app.services import market_data
+
+    monkeypatch.setattr(market_data, "_nifty_closes", lambda: None)
+
+
 @pytest.fixture()
 def clean_db():
     """Empty every table (children first) so a test starts from a fresh database."""

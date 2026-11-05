@@ -15,6 +15,7 @@ from app.engine import config as engine_config
 from app.engine.agents import emerging_explainer
 from app.engine.scoring.common import PillarResult
 from app.engine.scoring.engine import PILLAR_ORDER, CandidateScore
+from app.engine.scoring.signal import SIGNALS
 from app.models import Position, Suggestion
 from app.services import market_data
 from app.services.plan_service import DISCLAIMER
@@ -128,6 +129,78 @@ def pillars_payload(candidate: CandidateScore) -> dict:
             for k, p in candidate.pillars.items()}
 
 
+# --- verdict (deterministic; docs/API_CONTRACT.md -> Verdict) ---------------------------------
+
+UPTREND_TOKENS = {"STRONG_UPTREND", "ABOVE_200EMA", "UPTREND"}
+DOWNTREND_TOKENS = {"STRONG_DOWNTREND", "BELOW_200EMA", "DOWNTREND"}
+BUYABLE_SIGNALS = {SIGNALS["EARLY_SETUP"], SIGNALS["BREAKOUT_CONFIRMED"], SIGNALS["DEVELOPING"]}
+# Signals whose meaning goes beyond the stage name; for the rest the stage reads better
+# ("Uptrend, breakout confirmed", "Sideways, quiet accumulation", "Downtrend, weak").
+SIGNAL_PHRASES = {SIGNALS["WEAK"]: "weak", SIGNALS["BREAKOUT_CONFIRMED"]: "breakout confirmed",
+                  SIGNALS["EXTENDED"]: "extended"}
+
+
+def _trend_token(ema_trend: str | None) -> str:
+    return (ema_trend or "").split(" ")[0]  # "ABOVE_200EMA (bullish bias)" -> "ABOVE_200EMA"
+
+
+def chart_trend(ema_trend: str | None) -> str:
+    token = _trend_token(ema_trend)
+    if token in UPTREND_TOKENS:
+        return "uptrend"
+    if token in DOWNTREND_TOKENS:
+        return "downtrend"
+    return "sideways"
+
+
+def chart_points(ema_trend: str | None, rsi: float | None, volume_ratio: float | None) -> list[str]:
+    token, points = _trend_token(ema_trend), []
+    if token in ("STRONG_UPTREND", "ABOVE_200EMA"):
+        points.append("Above 200-day EMA")
+    elif token in ("STRONG_DOWNTREND", "BELOW_200EMA"):
+        points.append("Below 200-day EMA")
+    elif token == "UPTREND":   # history too short for a 200-day EMA
+        points.append("Above 50-day EMA")
+    elif token == "DOWNTREND":
+        points.append("Below 50-day EMA")
+    if rsi is not None:
+        points.append(f"RSI {rsi:.0f}")
+    if volume_ratio is not None:
+        points.append(f"Volume {volume_ratio:.1f}x")
+    return points
+
+
+def build_verdict(failures: list[str], rules_total: int, signal: str, stage: str, ema_trend: str | None,
+                  rsi: float | None, volume_ratio: float | None, profit_yoy_pct: float | None) -> dict:
+    """overall / rules / chart / reason from already-computed numbers. Pure; no LLM."""
+    failures = list(failures)
+    trend = chart_trend(ema_trend)
+    label = f"{trend.capitalize()}, {SIGNAL_PHRASES.get(signal, (stage or '').lower())}"
+    if (signal == SIGNALS["WEAK"] or trend == "downtrend"
+            or (profit_yoy_pct is not None and profit_yoy_pct < 0) or len(failures) > 2):
+        overall = "avoid"
+    elif not failures and trend == "uptrend" and signal in BUYABLE_SIGNALS:
+        overall = "buy"
+    else:
+        overall = "watch"
+    main = failures[0] if failures else "Passes all rules"
+    return {
+        "overall": overall,
+        "rules": {"passed": max(rules_total - len(failures), 0), "total": rules_total, "failures": failures},
+        "chart": {"trend": trend, "label": label, "points": chart_points(ema_trend, rsi, volume_ratio)},
+        "reason": f"{main}; {label[0].lower()}{label[1:]}.",
+    }
+
+
+def _verdict_of(row: Suggestion, payload: dict) -> dict:
+    """Stored verdict, or computed once (and saved) for rows created before verdicts existed."""
+    if payload.get("verdict"):
+        return payload["verdict"]
+    from app.services import suggestion_service  # late import: suggestion_service imports this module
+
+    return suggestion_service.backfill_verdict(row)
+
+
 # --- narration -------------------------------------------------------------------
 
 def _candidate_from_payload(row: Suggestion, payload: dict) -> CandidateScore:
@@ -198,7 +271,8 @@ def summary(row: Suggestion, lookup: tuple[dict[int, int], dict[str, int]]) -> d
     by_suggestion, open_by_symbol = lookup
     position_id = by_suggestion.get(row.id) or open_by_symbol.get(row.symbol)
     return {
-        "id": row.id, "source": row.source, "symbol": row.symbol, "rank": row.rank, "score": round(row.score, 1),
+        "id": row.id, "source": row.source, "verdict": _verdict_of(row, payload), "symbol": row.symbol,
+        "rank": row.rank, "score": round(row.score, 1),
         "stage": row.stage, "signal": row.signal, "price": row.price, "entry_optimal": row.entry_optimal,
         "stop_loss": row.stop_loss, "target": row.target, "risk_reward": row.risk_reward,
         "horizon_days": row.horizon_days, "planned_exit_date": row.planned_exit_date,

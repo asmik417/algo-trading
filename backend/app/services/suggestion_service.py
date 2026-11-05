@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.core.clock import utc_now_iso
 from app.core.redaction import redact
@@ -111,6 +111,7 @@ class Scored:
     indicators: dict
     failures: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)   # filters not applied because the metric is missing
+    rules_checked: int = 0                              # filters actually evaluated (pass or fail); verdict.rules.total
 
     @property
     def has_fundamentals(self) -> bool:
@@ -125,83 +126,98 @@ def _latest_ocf(cashflow: list[dict]) -> float | None:
     return None
 
 
-def filter_failures(s: Scored, params: ScreenParams) -> tuple[list[str], list[str]]:
-    """(failures, skipped) for the profile's hard filters, both human-readable.
-    A missing metric skips its filter; `skipped` says which ones, e.g. "ROE unavailable, filter skipped"."""
+def filter_failures(s: Scored, params: ScreenParams) -> tuple[list[str], list[str], int]:
+    """(failures, skipped, checked) for the profile's hard filters. A missing metric skips its filter
+    ("ROE unavailable, filter skipped") and is not counted in `checked`; a filter switched off is neither."""
     c, info, ind, m = s.candidate, s.bundle.get("info") or {}, s.indicators, s.candidate.market
     out: list[str] = []
     skipped: list[str] = []
+    checked = 0
 
     def skip(what: str) -> None:
         skipped.append(f"{what} unavailable, filter skipped")
 
-    bucket = market_cap_bucket(c.market_cap)
-    if bucket not in params.allowed_caps:
-        out.append(f"Market cap bucket {bucket} not in allowed ({', '.join(params.allowed_caps)})")
-    pe = num(info.get("trailingPE"))
+    def rule(failure: str | None) -> None:
+        """Record one evaluated filter; `failure` is the message when it fails, None when it passes."""
+        nonlocal checked
+        checked += 1
+        if failure:
+            out.append(failure)
+
+    if c.market_cap is None:
+        skip("Market cap")
+    else:
+        bucket = market_cap_bucket(c.market_cap)
+        rule(None if bucket in params.allowed_caps
+             else f"Market cap bucket {bucket} not in allowed ({', '.join(params.allowed_caps)})")
     if params.max_pe > 0:
+        pe = num(info.get("trailingPE"))
         if pe is None:
             skip("P/E")
         elif pe <= 0:
-            out.append(f"P/E {pe:.0f} is negative (loss-making)")
-        elif pe > params.max_pe:
-            out.append(f"P/E {pe:.0f} above max {params.max_pe:.0f}")
+            rule(f"P/E {pe:.0f} is negative (loss-making)")
+        else:
+            rule(f"P/E {pe:.0f} above max {params.max_pe:.0f}" if pe > params.max_pe else None)
     roe = num(info.get("returnOnEquity"), 6)
     if roe is None:
         skip("ROE")
-    elif roe * 100 < params.min_roe_pct:
-        out.append(f"ROE {roe * 100:.1f}% below min {params.min_roe_pct:.0f}%")
-    de = num(info.get("debtToEquity"))
+    else:
+        rule(f"ROE {roe * 100:.1f}% below min {params.min_roe_pct:.0f}%" if roe * 100 < params.min_roe_pct else None)
     if params.max_debt_to_equity > 0:
+        de = num(info.get("debtToEquity"))
         if de is None:
             skip("Debt/equity")
-        elif de > params.max_debt_to_equity:
-            out.append(f"Debt/equity {de:.0f}% above max {params.max_debt_to_equity:.0f}%")
+        else:
+            rule(f"Debt/equity {de:.0f}% above max {params.max_debt_to_equity:.0f}%"
+                 if de > params.max_debt_to_equity else None)
     growth = num(c.profit_yoy_pct)
     if growth is None:
         skip("Profit growth")
-    elif growth < params.min_profit_growth_pct:
-        out.append(f"Profit growth {growth:.0f}% below min {params.min_profit_growth_pct:.0f}%")
+    else:
+        rule(f"Profit growth {growth:.0f}% below min {params.min_profit_growth_pct:.0f}%"
+             if growth < params.min_profit_growth_pct else None)
     if params.require_positive_ocf:
         ocf = _latest_ocf(s.bundle.get("cashflow"))
         if ocf is None:
             skip("Operating cash flow")
-        elif ocf <= 0:
-            out.append("Operating cash flow is negative")
+        else:
+            rule("Operating cash flow is negative" if ocf <= 0 else None)
     rsi = ind.get("rsi")
     if rsi is None:
         skip("RSI")
     elif rsi < params.rsi_min:
-        out.append(f"RSI {rsi:.0f} below min {params.rsi_min:.0f}")
-    elif rsi > params.rsi_max:
-        out.append(f"RSI {rsi:.0f} above max {params.rsi_max:.0f}")
+        rule(f"RSI {rsi:.0f} below min {params.rsi_min:.0f}")
+    else:
+        rule(f"RSI {rsi:.0f} above max {params.rsi_max:.0f}" if rsi > params.rsi_max else None)
     if params.require_above_200ema:
         trend = ind.get("ema_trend")
         if ind.get("ema200") is None or trend is None:
             skip("200-day EMA")
-        elif not trend.startswith(("STRONG_UPTREND", "ABOVE_200EMA")):
-            out.append("Price is below the 200-day EMA")
+        else:
+            rule(None if trend.startswith(("STRONG_UPTREND", "ABOVE_200EMA")) else "Price is below the 200-day EMA")
     runup = m.change_3m_pct if m is not None else None
     if runup is None:
         skip("3-month run-up")
-    elif runup > params.max_3m_runup_pct:
-        out.append(f"3-month run-up {runup:.0f}% above max {params.max_3m_runup_pct:.0f}%")
+    else:
+        rule(f"3-month run-up {runup:.0f}% above max {params.max_3m_runup_pct:.0f}%"
+             if runup > params.max_3m_runup_pct else None)
     if params.max_dist_from_52w_high_pct > 0:
         dist = m.dist_from_52w_high_pct if m is not None else None  # 0 = at the high, negative = below it
         if dist is None:
             skip("Distance from 52-week high")
-        elif -dist > params.max_dist_from_52w_high_pct:
-            out.append(f"{-dist:.0f}% below 52-week high, more than max {params.max_dist_from_52w_high_pct:.0f}%")
+        else:
+            rule(f"{-dist:.0f}% below 52-week high, more than max {params.max_dist_from_52w_high_pct:.0f}%"
+                 if -dist > params.max_dist_from_52w_high_pct else None)
     vol = m.volume_ratio_20d if m is not None else None
     if vol is None:
         skip("Volume ratio")
-    elif vol < params.min_volume_ratio:
-        out.append(f"Volume {vol:.2f}x 20-day average, below min {params.min_volume_ratio:.2f}x")
-    if c.total_score is not None and c.total_score < params.min_score:
-        out.append(f"Score {c.total_score:.0f} below min {params.min_score:.0f}")
-    if c.signal == SIGNALS["WEAK"]:
-        out.append(f"Signal is {SIGNALS['WEAK']}")
-    return out, skipped
+    else:
+        rule(f"Volume {vol:.2f}x 20-day average, below min {params.min_volume_ratio:.2f}x"
+             if vol < params.min_volume_ratio else None)
+    if c.total_score is not None:
+        rule(f"Score {c.total_score:.0f} below min {params.min_score:.0f}" if c.total_score < params.min_score else None)
+    rule(f"Signal is {SIGNALS['WEAK']}" if c.signal == SIGNALS["WEAK"] else None)
+    return out, skipped, checked
 
 
 CORPORATE_ACTION_MOVE = 0.40
@@ -222,9 +238,14 @@ def score_symbol(symbol: str, history: pd.DataFrame, bundle: dict, params: Scree
     candidate = evaluate(symbol, history, bundle.get("info") or {}, bundle.get("quarterly") or [],
                          bundle.get("cashflow") or [], weights=params.weights)
     s = Scored(candidate=candidate, bundle=bundle, indicators=analysis_service.indicators(history))
-    s.failures, s.skipped = filter_failures(s, params)
-    if (gap_day := corporate_action_date(history)) is not None:
+    s.failures, s.skipped, s.rules_checked = filter_failures(s, params)
+    # Two more rules, always evaluated and listed first when they fail.
+    gap_day = corporate_action_date(history)
+    s.rules_checked += 2
+    if gap_day is not None:
         s.failures.insert(0, f"Possible corporate action on {gap_day}, excluded")
+    if not s.has_fundamentals:  # full runs drop these before saving; Explore/watchlist show why
+        s.failures.insert(0, NO_FUNDAMENTALS)
     return s
 
 
@@ -245,7 +266,50 @@ def _payload(s: Scored, params: ScreenParams) -> dict:
         "volume_ratio_20d": num(m.volume_ratio_20d) if m else None,
         # Contract: when the stock passes, `failures` lists filters skipped for missing data instead.
         "filters": {"passed": not s.failures, "failures": list(s.failures) if s.failures else list(s.skipped)},
+        "verdict": verdict_of(s),
     }
+
+
+def verdict_of(s: Scored) -> dict:
+    ind, m = s.indicators, s.candidate.market
+    volume = ind.get("volume_ratio") if ind.get("volume_ratio") is not None else (m.volume_ratio_20d if m else None)
+    return analysis_service.build_verdict(s.failures, s.rules_checked, s.candidate.signal, s.candidate.stage,
+                                          ind.get("ema_trend"), ind.get("rsi"), volume, num(s.candidate.profit_yoy_pct))
+
+
+def _params_for(db: Session, row: Suggestion) -> ScreenParams:
+    """The parameters a stored suggestion was scored under: its run's snapshot, else (Explore) the profile's."""
+    if row.run_id is not None and (run := db.get(SuggestionRun, row.run_id)) is not None:
+        return ScreenParams.from_json(run.params_json)
+    return profile_service.params_of(profile_service.get_profile(db, row.profile_id))
+
+
+def backfill_verdict(row: Suggestion) -> dict:
+    """Verdict for a row saved before verdicts existed: re-score it exactly as it was scored (history up to its
+    trading day, that day's cached fundamentals, its run's params), then save it into payload_json once."""
+    db = object_session(row)
+    payload = json.loads(row.payload_json or "{}")
+    try:
+        hist = market_data.history(row.symbol)
+        hist = hist.loc[hist.index <= pd.Timestamp(row.trading_day)]
+        if hist.empty:
+            raise ValueError("no price history up to the suggestion day")
+        s = score_symbol(row.symbol, hist, load_fundamentals(row.trading_day, row.symbol), _params_for(db, row))
+        verdict = verdict_of(s)
+    except Exception:
+        log.warning("Verdict backfill for suggestion %s (%s) fell back to stored filters", row.id, row.symbol,
+                    exc_info=True)
+        stored = payload.get("filters") or {}
+        failures = [] if stored.get("passed", True) else list(stored.get("failures", []))
+        ind = payload.get("indicators") or {}
+        # Without a re-score the evaluated-filter count is unknown; only the stored failures are certain.
+        verdict = analysis_service.build_verdict(failures, len(failures), row.signal, row.stage, ind.get("ema_trend"),
+                                                 ind.get("rsi"), ind.get("volume_ratio"), payload.get("profit_yoy_pct"))
+    payload["verdict"] = verdict
+    row.payload_json = json.dumps(payload)
+    if db is not None:
+        db.commit()
+    return verdict
 
 
 def _suggestion_row(s: Scored, plan: plan_service.Plan, params: ScreenParams, profile_id: int, trading_day: str,
@@ -392,8 +456,6 @@ def analyze_one(symbol: str, params: ScreenParams, trading_day: str | None,
     s = score_symbol(sym, hist, load_fundamentals(trading_day, sym, force_refetch), params)
     if s.candidate.total_score is None:
         raise BadInput(f"Not enough data to score {sym}.")
-    if not s.has_fundamentals:
-        s.failures.insert(0, NO_FUNDAMENTALS)
     plan = plan_service.build_plan(hist, s.candidate.stage, params, trading_day)
     if plan is None:
         raise BadInput(f"Not enough price history to build a plan for {sym}.")
@@ -591,8 +653,8 @@ def suggestions_for(db: Session, profile_id: int, run_ref: str = "latest") -> di
             raise NotFound(f"Run {run_ref} not found for profile {profile_id}.")
     if run is None:
         return {"run": None, "items": []}
-    rows = db.scalars(select(Suggestion).where(Suggestion.run_id == run.id, Suggestion.source == "run")
-                      .order_by(Suggestion.rank))
+    rows = list(db.scalars(select(Suggestion).where(Suggestion.run_id == run.id, Suggestion.source == "run")
+                           .order_by(Suggestion.rank)))
     lookup = analysis_service.tracking_lookup(db, profile_id)
     return {"run": run_to_schema(run), "items": [analysis_service.summary(r, lookup) for r in rows]}
 
