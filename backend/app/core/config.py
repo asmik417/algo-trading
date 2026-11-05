@@ -26,7 +26,9 @@ def _secret_key() -> str:
 
 class Settings(BaseModel):
     API_PREFIX: str = "/api/v1"
-    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    CORS_ORIGINS: list[str] = Field(
+        default_factory=lambda: [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:4820,http://127.0.0.1:4820").split(",") if o.strip()]
+    )
     DATABASE_URL: str = engine_config.DATABASE_URL
     DAILY_JOB_HOUR: int = _env_int("DAILY_JOB_HOUR", 18)
     DAILY_JOB_MINUTE: int = _env_int("DAILY_JOB_MINUTE", 30)
