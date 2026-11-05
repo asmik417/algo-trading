@@ -20,7 +20,7 @@ export function SuggestedTable({ items, onOpen, onTrack, isTracking }: Props) {
           <tr>
             <Th align="right">Rank</Th>
             <StockHeader />
-            <MetricHeaders />
+            <MetricHeaders withOverall />
             <Th align="center" stickyRight>
               Track
             </Th>
@@ -41,7 +41,7 @@ export function SuggestedTable({ items, onOpen, onTrack, isTracking }: Props) {
                 {formatNumber(s.rank)}
               </Td>
               <StockCell s={s} />
-              <MetricCells s={s} />
+              <MetricCells s={s} withOverall />
               <Td align="center" stickyRight>
                 <TrackButton suggestion={s} loading={isTracking(s.id)} onTrack={() => onTrack(s)} />
               </Td>

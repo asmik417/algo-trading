@@ -5,6 +5,7 @@ import type { SuggestionSummary } from '../../types/api';
 import { Td, Th } from '../ui/Table';
 import { ScoreBar } from './ScoreBar';
 import { SignalBadge } from './SignalBadge';
+import { OverallBadge } from './VerdictParts';
 
 export function StockHeader() {
   return <Th>Stock</Th>;
@@ -22,11 +23,12 @@ export function StockCell({ s }: { s: SuggestionSummary }) {
   );
 }
 
-/** Signal … Vol× */
-export function MetricHeaders() {
+/** Signal … Vol×. `withOverall` adds the Overall verdict column right after Signal (Algo Suggested). */
+export function MetricHeaders({ withOverall = false }: { withOverall?: boolean }) {
   return (
     <>
       <Th>Signal</Th>
+      {withOverall && <Th>Overall</Th>}
       <Th>Stage</Th>
       <Th align="right">Score</Th>
       <Th align="right">Price</Th>
@@ -45,12 +47,23 @@ export function MetricHeaders() {
 
 export const METRIC_COLUMN_COUNT = 13;
 
-export function MetricCells({ s }: { s: SuggestionSummary }) {
+export function MetricCells({
+  s,
+  withOverall = false,
+}: {
+  s: SuggestionSummary;
+  withOverall?: boolean;
+}) {
   return (
     <>
       <Td>
         <SignalBadge signal={s.signal} />
       </Td>
+      {withOverall && (
+        <Td>
+          <OverallBadge verdict={s.verdict} />
+        </Td>
+      )}
       <Td className="text-ink-muted">{s.stage}</Td>
       <Td align="right">
         <ScoreBar score={s.score} />

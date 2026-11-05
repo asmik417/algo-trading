@@ -1,5 +1,5 @@
-// Copied verbatim from docs/API_CONTRACT.md: the Auth snippet, the Watchlist runs snippet and the TypeScript types section.
-// Do not edit by hand.
+// Copied verbatim from docs/API_CONTRACT.md: the Auth and Watchlist runs snippets and the TypeScript types section
+// (the Verdict snippet repeats types the main section already declares). Do not edit by hand.
 
 export interface LoginBody { username: string; password: string; }
 export interface Me { username: string; }
@@ -12,6 +12,9 @@ export interface WatchlistResults { run: Run; items: WatchlistItem[]; }
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed';
 export type RunKind = 'full' | 'watchlist';
+export type Overall = 'buy' | 'watch' | 'avoid';
+export type Trend = 'uptrend' | 'downtrend' | 'sideways';
+export interface Verdict { overall: Overall; rules: { passed: number; total: number; failures: string[] }; chart: { trend: Trend; label: string; points: string[] }; reason: string; }
 export type PositionStatus = 'open' | 'due' | 'closed';
 export type CloseReason = 'target_hit' | 'stop_hit' | 'horizon_closed' | 'manual';
 export type EventType = 'open' | 'extend' | 'shorten' | 'due' | 'close' | 'note';
@@ -28,7 +31,7 @@ export interface RunProgress { phase: string; done: number; total: number; curre
 export interface Run { id: number; profile_id: number; status: RunStatus; kind: RunKind; symbols: string[] | null; trading_day: string | null; progress: RunProgress; universe_size: number | null; scored_size: number | null; passed_size: number | null; error: string | null; started_at: string | null; finished_at: string | null; created_at: string; }
 
 export type SuggestionSource = 'run' | 'explore' | 'watchlist';
-export interface SuggestionSummary { id: number; source: SuggestionSource; symbol: string; rank: number | null; score: number; stage: string; signal: string; price: number; entry_optimal: number; stop_loss: number; target: number; risk_reward: number; horizon_days: number; planned_exit_date: string; market_cap_bucket: string; sector: string | null; profit_yoy_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; volume_ratio_20d: number | null; is_tracked: boolean; position_id: number | null; }
+export interface SuggestionSummary { id: number; source: SuggestionSource; verdict: Verdict; symbol: string; rank: number | null; score: number; stage: string; signal: string; price: number; entry_optimal: number; stop_loss: number; target: number; risk_reward: number; horizon_days: number; planned_exit_date: string; market_cap_bucket: string; sector: string | null; profit_yoy_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; volume_ratio_20d: number | null; is_tracked: boolean; position_id: number | null; }
 export interface Reasons { why_flagged: string; what_changed: string; positives: string[]; risks: string[]; }
 export interface Plan { entry_aggressive: number; entry_optimal: number; entry_conservative: number; stop_loss: number; target: number; risk_reward: number; horizon_days: number; planned_exit_date: string; timing_note: string; exit_note: string; disclaimer: string; }
 export interface PillarScore { key: string; label: string; score: number | null; max: number; weight: number; available: boolean; details: Record<string, number | string | null>; }
