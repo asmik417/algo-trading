@@ -34,5 +34,7 @@ export const keys = {
     day: string | null | undefined,
     profileId: number | null | undefined,
   ) => ['analyst-view', symbol, day, profileId] as const,
+  scorecard: (profileId: number | null | undefined, source: string, horizon: number) =>
+    ['scorecard', profileId, source, horizon] as const,
   lossSummary: (profileId: number | null | undefined) => ['loss-summary', profileId] as const,
 };
