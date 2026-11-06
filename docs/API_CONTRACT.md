@@ -108,7 +108,7 @@ WatchlistItem = WatchlistHit | WatchlistMiss   // see the TS below; a miss carri
 
 ```ts
 // WatchlistRunBody: see "Pick lists" (list_id or symbols, exactly one)
-export interface WatchlistHit extends SuggestionSummary { filters: FilterResult; error: null; }
+export interface WatchlistHit extends SuggestionSummary { decision: Decision; filters: FilterResult; error: null; }
 export interface WatchlistMiss { id: null; symbol: string; error: string; filters: null; score: null; signal: null; stage: null; price: null; is_tracked: false; position_id: null; }
 export type WatchlistItem = WatchlistHit | WatchlistMiss;
 export interface WatchlistResults { run: Run; items: WatchlistItem[]; }
@@ -152,6 +152,44 @@ Rules: `total` counts only filters that could be evaluated (unavailable metrics 
 Overall: **avoid** if signal is Weak, or trend is downtrend, or profit growth YoY < 0, or more than 2 rule failures. **buy** if all rules pass and trend is uptrend and signal is Early Setup, Breakout Confirmed or Developing. Otherwise **watch**. `reason` is one deterministic sentence. With failures: "<first failure>; <chart label>." With no failures and overall buy/watch: "Passes all rules; <chart label>." With no failures and overall avoid: "Passes all rules, but the chart is <trend>: <chart label>." The LLM is not used here.
 
 `Overall`, `Trend` and `Verdict` are declared once in the main TS block. `SuggestionSummary` gains `verdict: Verdict`. `filters` on SuggestionDetail / WatchlistHit stays for compatibility.
+
+---
+
+## Decision (what the stock dialog leads with)
+
+The dialog is a decision tool, not an information tool. Every `SuggestionDetail` and every `WatchlistHit` carries a `decision` built by deterministic code (`services/decision_service.py`) from the verdict, the plan, the indicators and the fundamentals. The LLM writes only `decision.narrative`, from the findings it is given, and may not introduce a number that is not in them.
+
+```ts
+export type Direction = 'up' | 'down' | 'sideways';
+export interface Finding { side: 'for' | 'against'; text: string; }           // text always carries its number, e.g. "Delivery % fell from 51% to 39% during the surge"
+export interface Expectation { direction: Direction; level: number | null; by_date: string; text: string; }
+export interface ReviewRule { until: string; trigger: string; }               // "do not revisit before <until> unless <trigger>"
+export interface Confidence { signal_win_rate_pct: number | null; trades: number | null; backtest_id: number | null; }
+export interface Decision { overall: Overall; headline: string; findings: Finding[]; expectation: Expectation; review: ReviewRule; confidence: Confidence; narrative: string; }
+```
+`SuggestionDetail` and `WatchlistHit` gain `decision: Decision`. `Reasons` (why_flagged, what_changed, positives, risks) stays for compatibility but the UI no longer shows `why_flagged` / `what_changed`.
+
+### How each field is computed (deterministic)
+- `headline`: one sentence, template per overall. buy: "Buy <sym> near ₹<entry_optimal>: <chart label>, <strongest for-finding, short>." watch: "Wait on <sym>: <first failure or chart reason>." avoid: "Avoid <sym> for now: <first failure>; <chart label>." Holdings verbs (add / hold / trim / exit) come later and reuse this shape.
+- `findings`: 3 to 6 items, most decisive first. Against: every failed rule that drove the verdict (max 3, in the verdict's order), then the chart points that are negative (below EMA, RSI over 70, falling delivery, MACD bearish, volume drying). For: positives from the engine that carry a number (profit growth, margin, PEG, delivery rising, volume, trend). Never a bare adjective; each item must carry a figure. Rules that were skipped for lack of data are not findings.
+- `expectation`:
+  - buy: `up`, `level = target`, `by_date = planned_exit_date`, text "Expect ₹<target> by <date> while it holds above ₹<stop>."
+  - watch: `sideways`, `level = entry_optimal`, `by_date` = 20 trading days out, text "Expect a pullback toward ₹<entry_optimal>; becomes a Buy if it holds there and <first failure's fix>."
+  - avoid with downtrend: `down`, `level = max(stop, 20-day low)`, `by_date` = 20 trading days out, text "Expect further weakness toward ₹<level> over the next 4 weeks."
+  - avoid with uptrend or sideways: `sideways`, `level = null`, `by_date` = 20 trading days out, text "The price may hold up, but the numbers do not support buying: <first failure>."
+- `review`: `until = by_date`; `trigger` = the fix for the first failure, phrased as a condition: "it closes above the 200-day EMA (₹<ema200>)", "RSI drops back under 70", "the next quarterly results show profit growth of 20% or more", "volume runs above 1.2× its average for 3 sessions", "P/E falls under 50 (price below ₹<price × 50/pe>)". For a Weak signal with no fix: "the signal turns to Early Setup or Breakout".
+- `confidence`: from the latest finished backtest of the same profile, the `by_signal` row for this signal: `signal_win_rate_pct`, `trades`, `backtest_id`; all null if no backtest. UI text: "In our 12-month backtest this signal won <x>% of <n> trades."
+- `narrative`: LLM, 2 to 4 sentences for a non-trader, written **only** from headline + findings + expectation + review. Deterministic fallback = headline + first two findings. Cached like `why_flagged` today.
+- Existing rows: `decision` is rebuilt on read from stored data (like the verdict), so nothing needs re-scoring.
+
+### Dialog layout (frontend)
+1. **Header**: symbol, name/sector line, latest close, Track button. Big verdict badge and the `headline` beside it.
+2. **Our call** card, two columns: *Expectation* (direction arrow, level, by date, text) and *Review* ("Do not revisit before <until> unless <trigger>"), with the confidence line underneath.
+3. **Why** list: findings as a two-column list (for / against), then the `narrative` paragraph.
+4. **Plan**: for buy, the three entry cards plus target/stop/exit as today. For watch, one line: "Buy zone ₹<entry_optimal>, stop ₹<stop>, target ₹<target>" and the entry cards collapsed. For avoid, collapsed under "Plan if the verdict changes".
+5. **Details**, collapsed by default, one accordion with three rows: "Rules <passed>/<total>" (the failure list and the skipped list), "Chart & score" (price chart, score breakdown, indicator strip), "Fundamentals" (the grid). Nothing from Details appears above the fold.
+6. Disclaimer line.
+The table rows in Algo Suggested, Explore and My Picks keep their columns; the `headline` becomes the row tooltip.
 
 ---
 
@@ -385,7 +423,7 @@ export interface Indicators { rsi: number | null; macd_signal: string | null; em
 export interface Fundamentals { pe: number | null; pb: number | null; roe_pct: number | null; debt_to_equity: number | null; market_cap: number | null; sector: string | null; industry: string | null; revenue_yoy_pct: number | null; profit_yoy_pct: number | null; eps_yoy_pct: number | null; operating_margin_pct: number | null; latest_ocf: number | null; }
 export interface ChartData { dates: string[]; close: number[]; ema20: (number | null)[]; ema50: (number | null)[]; volume: number[]; }
 export interface FilterResult { passed: boolean; failures: string[]; }
-export interface SuggestionDetail extends SuggestionSummary { trading_day: string; reasons: Reasons; plan: Plan; score_breakdown: PillarScore[]; indicators: Indicators; fundamentals: Fundamentals; chart: ChartData; filters: FilterResult; }
+export interface SuggestionDetail extends SuggestionSummary { trading_day: string; decision: Decision; reasons: Reasons; plan: Plan; score_breakdown: PillarScore[]; indicators: Indicators; fundamentals: Fundamentals; chart: ChartData; filters: FilterResult; }
 export interface SuggestionsResponse { run: Run | null; items: SuggestionSummary[]; }
 
 export interface StockRow { symbol: string; close: number; change_1d_pct: number | null; change_1w_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; dist_from_52w_high_pct: number | null; volume_ratio_20d: number | null; avg_turnover_lacs: number | null; }
@@ -438,6 +476,8 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
 - 2026-11-06 (guide): **Pick lists** added (named, saved My Picks lists; `Run.list_id`/`list_name`; `WatchlistRunBody` takes `list_id` or `symbols`). See the "Pick lists" section.
 
 - 2026-11-06 (guide): **Backtests** added (see the "Backtests" section; types in the section's snippet, not duplicated in the main block).
+
+- 2026-11-06 (guide): **Decision** added (dialog leads with verdict, proof, expectation, review rule; details collapsed). `SuggestionDetail` and `WatchlistHit` gain `decision`. Types live in the Decision section's snippet.
 
 ### Open
 - 2026-11-05 (frontend): **`WatchlistItem` error rows contradict their type.** The prose says an unknown or unscorable symbol comes back with `error` set "and score fields null", but `WatchlistItem extends SuggestionSummary`, where `id`, `score`, `price`, `entry_optimal`, `stop_loss`, `target`, `risk_reward`, `horizon_days`, `stage`, `signal`, `planned_exit_date` are all non-null, and `filters: FilterResult` is required. An unknown symbol also has no persisted suggestion, so there is no real `id`. Proposal: a discriminated union, so neither side has to guess:
