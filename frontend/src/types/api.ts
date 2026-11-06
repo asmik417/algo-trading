@@ -1,5 +1,5 @@
-// Copied verbatim from docs/API_CONTRACT.md: the Auth and Watchlist runs snippets and the TypeScript types section
-// (the Verdict snippet repeats types the main section already declares). Do not edit by hand.
+// Copied verbatim from docs/API_CONTRACT.md: the Auth and Watchlist runs snippets and the TypeScript types section.
+// Do not edit by hand.
 
 export interface LoginBody { username: string; password: string; }
 export interface Me { username: string; }

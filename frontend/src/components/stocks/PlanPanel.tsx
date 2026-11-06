@@ -23,14 +23,7 @@ function EntryCard({
         highlight ? 'border-brand bg-brand-soft/60' : 'border-line bg-white',
       )}
     >
-      <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wide text-ink-muted">
-        {label}
-        {highlight && (
-          <span className="rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-white">
-            Optimal
-          </span>
-        )}
-      </div>
+      <div className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</div>
       <div className="num mt-1 text-lg font-semibold text-ink">{formatINR(price)}</div>
       <div className="num text-xs text-ink-muted">
         {formatPct(pctFrom(price, close))} vs latest close
