@@ -8,6 +8,7 @@ export const keys = {
   profiles: ['profiles'] as const,
   runs: (profileId: number | null | undefined) => ['runs', profileId] as const,
   watchlistRuns: (profileId: number | null | undefined) => ['watchlist-runs', profileId] as const,
+  pickLists: ['pick-lists'] as const,
   runResults: (runId: number | null | undefined) => ['run-results', runId] as const,
   run: (runId: number | null | undefined) => ['run', runId] as const,
   suggestions: (profileId: number | null | undefined, runId: number | 'latest' = 'latest') =>

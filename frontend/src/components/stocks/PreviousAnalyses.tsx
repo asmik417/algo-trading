@@ -1,26 +1,27 @@
-// Small dropdown of earlier My Picks runs for the active strategy, so a saved list can be reopened.
+// Small dropdown of earlier analyses of the selected pick list under the active strategy.
 import { useWatchlistRuns } from '../../hooks/useWatchlist';
 import { formatDateTime } from '../../lib/format';
 import type { Run } from '../../types/api';
 import { Select } from '../ui/Input';
 
 function describe(run: Run): string {
-  const symbols = run.symbols ?? [];
-  const head = symbols.slice(0, 3).join(', ') + (symbols.length > 3 ? ', …' : '');
+  const n = run.symbols?.length ?? 0;
   const state = run.status === 'done' ? '' : run.status === 'failed' ? ' (failed)' : ' (running)';
-  return `${formatDateTime(run.created_at)} · ${symbols.length} stock${symbols.length === 1 ? '' : 's'}: ${head}${state}`;
+  return `${formatDateTime(run.created_at)} · ${n} stock${n === 1 ? '' : 's'}${state}`;
 }
 
 export function PreviousAnalyses({
   profileId,
+  listId,
   currentRunId,
   onOpen,
 }: {
   profileId: number;
+  listId: number;
   currentRunId: number | null;
   onOpen: (run: Run) => void;
 }) {
-  const { data: runs = [], isLoading } = useWatchlistRuns(profileId, 10);
+  const { data: runs = [], isLoading } = useWatchlistRuns(profileId, { limit: 10, listId });
   const value = runs.some((r) => r.id === currentRunId) ? String(currentRunId) : '';
   return (
     <Select
