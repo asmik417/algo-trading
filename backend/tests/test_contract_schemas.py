@@ -48,6 +48,7 @@ MODELS = {
     "Health": health.Health,
     "Me": auth.Me,
     "WatchlistHit": suggestion.WatchlistHit,
+    "Verdict": suggestion.Verdict,
     "WatchlistMiss": suggestion.WatchlistMiss,
     "WatchlistResults": suggestion.WatchlistResults,
 }

@@ -7,11 +7,33 @@ from app.schemas.common import ApiModel
 from app.schemas.run import Run
 
 SuggestionSource = Literal["run", "explore", "watchlist"]
+Overall = Literal["buy", "watch", "avoid"]
+Trend = Literal["uptrend", "downtrend", "sideways"]
+
+
+class VerdictRules(ApiModel):
+    passed: int
+    total: int
+    failures: list[str]
+
+
+class VerdictChart(ApiModel):
+    trend: Trend
+    label: str
+    points: list[str]
+
+
+class Verdict(ApiModel):
+    overall: Overall
+    rules: VerdictRules
+    chart: VerdictChart
+    reason: str
 
 
 class SuggestionSummary(ApiModel):
     id: int
     source: SuggestionSource
+    verdict: Verdict
     symbol: str
     rank: int | None
     score: float

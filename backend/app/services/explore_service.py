@@ -63,8 +63,10 @@ def list_stocks(search: str = "", sort: str = "change_1m_pct", order: str = "des
     day, df = table()
     term = (search or "").strip().upper()
     if term:
-        starts = df["symbol"].str.startswith(term)
-        df = df[starts | df["symbol"].str.contains(term, regex=False)].assign(_match=(~starts).astype(int))
+        df = df[df["symbol"].str.contains(term, regex=False)]
+        # Computed on the filtered frame: assigning a full-length Series to an empty frame makes pandas
+        # re-grow it to that Series' index (a no-match search came back with every row, as NaN).
+        df = df.assign(_match=(~df["symbol"].str.startswith(term)).astype(int))
     else:
         df = df.assign(_match=0)
     # Prefix matches first, then substring matches; unavailable values always sort last.

@@ -1,0 +1,2 @@
+# Runtime state written by the app; never commit.
+data/daily_update.lock

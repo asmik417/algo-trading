@@ -21,6 +21,6 @@ def test_docs_served(client):
 def test_cors_allows_frontend(client):
     r = client.options(
         "/api/v1/health",
-        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
+        headers={"Origin": "http://localhost:4820", "Access-Control-Request-Method": "GET"},
     )
-    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:4820"
