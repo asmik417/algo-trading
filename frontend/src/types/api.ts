@@ -1,16 +1,23 @@
-// Copied verbatim from docs/API_CONTRACT.md: the Auth, Watchlist runs, Pick lists and Backtests snippets and the
-// TypeScript types section. Do not edit by hand.
+// Copied verbatim from docs/API_CONTRACT.md: the Auth, Watchlist runs, Pick lists, Decision and Backtests snippets and
+// the TypeScript types section. Do not edit by hand.
 
 export interface LoginBody { username: string; password: string; }
 export interface Me { username: string; }
 
 // WatchlistRunBody: see "Pick lists" (list_id or symbols, exactly one)
-export interface WatchlistHit extends SuggestionSummary { filters: FilterResult; error: null; }
+export interface WatchlistHit extends SuggestionSummary { decision: Decision; filters: FilterResult; error: null; }
 export interface WatchlistMiss { id: null; symbol: string; error: string; filters: null; score: null; signal: null; stage: null; price: null; is_tracked: false; position_id: null; }
 export type WatchlistItem = WatchlistHit | WatchlistMiss;
 export interface WatchlistResults { run: Run; items: WatchlistItem[]; }
 
 export interface WatchlistRunBody { list_id?: number; symbols?: string[]; }   // exactly one
+
+export type Direction = 'up' | 'down' | 'sideways';
+export interface Finding { side: 'for' | 'against'; text: string; }           // text always carries its number, e.g. "Delivery % fell from 51% to 39% during the surge"
+export interface Expectation { direction: Direction; level: number | null; by_date: string; text: string; }
+export interface ReviewRule { until: string; trigger: string; }               // "do not revisit before <until> unless <trigger>"
+export interface Confidence { signal_win_rate_pct: number | null; trades: number | null; backtest_id: number | null; }
+export interface Decision { overall: Overall; headline: string; findings: Finding[]; expectation: Expectation; review: ReviewRule; confidence: Confidence; narrative: string; }
 
 export type ScanFrequency = 'weekly' | 'daily';
 export type EntryRule = 'next_close' | 'optimal_limit';
@@ -57,7 +64,7 @@ export interface Indicators { rsi: number | null; macd_signal: string | null; em
 export interface Fundamentals { pe: number | null; pb: number | null; roe_pct: number | null; debt_to_equity: number | null; market_cap: number | null; sector: string | null; industry: string | null; revenue_yoy_pct: number | null; profit_yoy_pct: number | null; eps_yoy_pct: number | null; operating_margin_pct: number | null; latest_ocf: number | null; }
 export interface ChartData { dates: string[]; close: number[]; ema20: (number | null)[]; ema50: (number | null)[]; volume: number[]; }
 export interface FilterResult { passed: boolean; failures: string[]; }
-export interface SuggestionDetail extends SuggestionSummary { trading_day: string; reasons: Reasons; plan: Plan; score_breakdown: PillarScore[]; indicators: Indicators; fundamentals: Fundamentals; chart: ChartData; filters: FilterResult; }
+export interface SuggestionDetail extends SuggestionSummary { trading_day: string; decision: Decision; reasons: Reasons; plan: Plan; score_breakdown: PillarScore[]; indicators: Indicators; fundamentals: Fundamentals; chart: ChartData; filters: FilterResult; }
 export interface SuggestionsResponse { run: Run | null; items: SuggestionSummary[]; }
 
 export interface StockRow { symbol: string; close: number; change_1d_pct: number | null; change_1w_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; dist_from_52w_high_pct: number | null; volume_ratio_20d: number | null; avg_turnover_lacs: number | null; }

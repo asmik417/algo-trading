@@ -9,6 +9,7 @@ import type {
   BacktestResults,
   BacktestSummary,
   BacktestTrade,
+  Confidence,
   EquityPoint,
 } from '../types/api';
 import {
@@ -452,4 +453,18 @@ export function deleteBacktest(id: number): void {
     fail(409, 'A running backtest cannot be deleted');
   state.backtests = state.backtests.filter((b) => b.id !== id);
   state.results.delete(id);
+}
+
+/** Confidence for a Decision: the latest finished backtest of the profile, its by_signal row for this signal. */
+export function signalConfidence(profileId: number, signal: string): Confidence {
+  ensureSeeded();
+  const latest = state.backtests
+    .filter((b) => b.profile_id === profileId && b.status === 'done')
+    .sort((a, b) => b.id - a.id)[0];
+  const row = latest
+    ? state.results.get(latest.id)?.by_signal.find((r) => r.key === signal)
+    : undefined;
+  return row && latest
+    ? { signal_win_rate_pct: row.win_rate_pct, trades: row.trades, backtest_id: latest.id }
+    : { signal_win_rate_pct: null, trades: null, backtest_id: null };
 }

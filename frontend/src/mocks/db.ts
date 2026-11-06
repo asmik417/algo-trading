@@ -73,6 +73,8 @@ import {
   riskReward,
   summarizeParams,
 } from './fixtures';
+import { signalConfidence } from './backtests';
+import { buildDecision } from './decision';
 import { fail } from './respond';
 import { getMockSession } from './session';
 
@@ -494,11 +496,20 @@ function buildDetail(
   const chart = buildChart(s.symbol, s.price, s.change_3m_pct ?? 0);
   const indicators = buildIndicators(s.symbol, s.price, chart, s.volume_ratio_20d);
   const fundamentals = buildFundamentals(s);
+  const plan = buildPlan(s);
   return {
     ...s,
     trading_day: TRADING_DAY,
+    decision: buildDecision(
+      s,
+      plan,
+      indicators,
+      fundamentals,
+      chart,
+      signalConfidence(profile.id, s.signal),
+    ),
     reasons: buildReasons(s, indicators.rsi),
-    plan: buildPlan(s),
+    plan,
     score_breakdown: buildBreakdown(s, profile),
     indicators,
     fundamentals,
@@ -1145,6 +1156,7 @@ export function listRuns(profileId: number, limit = 10): Run[] {
 const MAX_WATCHLIST = 50;
 const DETAIL_ONLY = new Set([
   'trading_day',
+  'decision',
   'reasons',
   'plan',
   'score_breakdown',
@@ -1186,7 +1198,7 @@ function buildWatchlistItem(profile: Profile, symbol: string): WatchlistItem {
     : { ...syntheticSummary(id, symbol, row.close, profile), source: 'watchlist' };
   const detail = buildDetail(summary, profile, !inList);
   state.adhoc.push({ profileId: profile.id, detail });
-  return { ...summaryOf(detail), filters: detail.filters, error: null };
+  return { ...summaryOf(detail), decision: detail.decision, filters: detail.filters, error: null };
 }
 
 /** Results grow as the run analyses symbols (in requested order), like the real backend. */
