@@ -25,7 +25,7 @@ def test_buy_needs_all_rules_uptrend_and_a_good_signal():
         "rules": {"passed": 9, "total": 9, "failures": []},
         "chart": {"trend": "uptrend", "label": "Uptrend, breakout confirmed",
                   "points": ["Above 200-day EMA", "RSI 61", "Volume 1.5x"]},
-        "reason": "Passes all rules; uptrend, breakout confirmed.",
+        "reason": "Passes all rules; Uptrend, breakout confirmed.",
     }
     for signal in (EARLY, DEVELOPING):
         assert v(signal=signal, stage="Quiet Accumulation")["overall"] == "buy"
@@ -58,7 +58,7 @@ def test_avoid_example_from_the_contract():
                                                           ["P/E 243 above max 50", "Profit growth -81% below min 20%"]}
     assert out["chart"] == {"trend": "downtrend", "label": "Downtrend, weak",
                             "points": ["Below 200-day EMA", "RSI 50", "Volume 1.5x"]}
-    assert out["reason"] == "P/E 243 above max 50; downtrend, weak."
+    assert out["reason"] == "P/E 243 above max 50; Downtrend, weak."
 
 
 # --- wording ----------------------------------------------------------------------------------------
@@ -136,3 +136,43 @@ def test_missing_market_cap_skips_the_cap_filter(client, market, monkeypatch):  
                                                          "200-day EMA unavailable, filter skipped"]}
     assert d["verdict"]["rules"] == {"passed": 13, "total": 13, "failures": []}  # one rule fewer, not a failure
     assert d["market_cap_bucket"] == "Unknown"
+
+
+# --- reason wording (contract: three sentences, word for word) ------------------------------------
+
+@pytest.mark.parametrize("kwargs, reason", [
+    ({"failures": ["P/E 62 above max 50"]}, "P/E 62 above max 50; Uptrend, breakout confirmed."),             # failure
+    ({}, "Passes all rules; Uptrend, breakout confirmed."),                                                     # buy
+    ({"trend": None, "signal": EARLY, "stage": "Quiet Accumulation"},
+     "Passes all rules; Sideways, quiet accumulation."),                                                        # watch
+    ({"trend": "BELOW_200EMA (bearish bias)", "signal": DEVELOPING, "stage": "Volume Expansion"},
+     "Passes all rules, but the chart is downtrend: Downtrend, volume expansion."),                            # avoid
+    ({"signal": WEAK}, "Passes all rules, but the chart is uptrend: Uptrend, weak."),                          # avoid
+    ({"profit": -12.0, "trend": None}, "Passes all rules, but the chart is sideways: Sideways, breakout confirmed."),
+])
+def test_reason_sentences(kwargs, reason):
+    out = v(**kwargs)
+    assert out["reason"] == reason
+    if not out["rules"]["failures"] and out["overall"] == "avoid":
+        assert out["reason"].startswith("Passes all rules, but the chart is ")
+
+
+def test_stored_reason_is_rebuilt_with_current_wording(client, market):  # noqa: F811
+    from app.db.session import SessionLocal
+    from app.models import Suggestion
+
+    pid = _profile(client)
+    _run(client, pid)
+    sid = client.get(f"/api/v1/profiles/{pid}/suggestions").json()["items"][0]["id"]
+    with SessionLocal() as db:  # a verdict stored with an older wording, and turned into a no-failure avoid
+        row = db.get(Suggestion, sid)
+        payload = json.loads(row.payload_json)
+        payload["verdict"].update(overall="avoid", reason="Passes all rules; old wording.")
+        payload["verdict"]["rules"]["failures"] = []
+        payload["verdict"]["chart"].update(trend="downtrend", label="Downtrend, weak")
+        row.payload_json = json.dumps(payload)
+        db.commit()
+    for path in (f"/api/v1/suggestions/{sid}", f"/api/v1/profiles/{pid}/suggestions"):
+        body = client.get(path).json()
+        verdict = body["verdict"] if "verdict" in body else body["items"][0]["verdict"]
+        assert verdict["reason"] == "Passes all rules, but the chart is downtrend: Downtrend, weak.", path

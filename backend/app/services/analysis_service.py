@@ -170,6 +170,15 @@ def chart_points(ema_trend: str | None, rsi: float | None, volume_ratio: float |
     return points
 
 
+def verdict_reason(overall: str, failures: list[str], trend: str, label: str) -> str:
+    """The contract's three sentences, word for word (docs/API_CONTRACT.md -> Verdict)."""
+    if failures:
+        return f"{failures[0]}; {label}."
+    if overall == "avoid":
+        return f"Passes all rules, but the chart is {trend}: {label}."
+    return f"Passes all rules; {label}."
+
+
 def build_verdict(failures: list[str], rules_total: int, signal: str, stage: str, ema_trend: str | None,
                   rsi: float | None, volume_ratio: float | None, profit_yoy_pct: float | None) -> dict:
     """overall / rules / chart / reason from already-computed numbers. Pure; no LLM."""
@@ -183,22 +192,25 @@ def build_verdict(failures: list[str], rules_total: int, signal: str, stage: str
         overall = "buy"
     else:
         overall = "watch"
-    main = failures[0] if failures else "Passes all rules"
     return {
         "overall": overall,
         "rules": {"passed": max(rules_total - len(failures), 0), "total": rules_total, "failures": failures},
         "chart": {"trend": trend, "label": label, "points": chart_points(ema_trend, rsi, volume_ratio)},
-        "reason": f"{main}; {label[0].lower()}{label[1:]}.",
+        "reason": verdict_reason(overall, failures, trend, label),
     }
 
 
 def _verdict_of(row: Suggestion, payload: dict) -> dict:
-    """Stored verdict, or computed once (and saved) for rows created before verdicts existed."""
-    if payload.get("verdict"):
-        return payload["verdict"]
-    from app.services import suggestion_service  # late import: suggestion_service imports this module
+    """Stored verdict, or computed once (and saved) for rows created before verdicts existed. The reason is
+    rebuilt from the stored parts on every read, so a wording change in the contract reaches every row."""
+    verdict = payload.get("verdict")
+    if not verdict:
+        from app.services import suggestion_service  # late import: suggestion_service imports this module
 
-    return suggestion_service.backfill_verdict(row)
+        verdict = suggestion_service.backfill_verdict(row)
+    reason = verdict_reason(verdict["overall"], verdict["rules"]["failures"], verdict["chart"]["trend"],
+                            verdict["chart"]["label"])
+    return {**verdict, "reason": reason}
 
 
 # --- narration -------------------------------------------------------------------
