@@ -18,6 +18,7 @@ from app.core.logging import get_logger
 from app.core.redaction import redact
 from app.db.session import SessionLocal
 from app.engine.backtest import calendar, fundamentals, patterns, replay, simulate, stats
+from app.engine.data import fetcher
 from app.engine.params import ScreenParams
 from app.engine.scoring import market_regime
 from app.models import Backtest, BacktestTrade
@@ -28,7 +29,7 @@ log = get_logger(__name__)
 
 HISTORY_MARGIN_DAYS = 420     # calendar days fetched before the requested start (250 trading days + slack)
 MAX_RANGE_YEARS = 3
-FETCH_WORKERS = 6
+FETCH_WORKERS = 3   # bulk fetches also go through fetcher.BULK_LIMITER to stay under Yahoo's rate limit
 ACTIVE = ("queued", "running")
 
 _lock = threading.Lock()                 # guards _progress and the one-backtest-at-a-time check
@@ -160,8 +161,13 @@ def execute(bt_id: int) -> None:
                     shortlists[scan] = replay.shortlist(scan, histories, params, suggestion_service.prefilter)
                     if require_fundamentals:
                         new = [s for s in shortlists[scan] if s not in bundles]
-                        for sym, bundle in zip(new, pool.map(partial(suggestion_service.load_fundamentals, today_day), new)):
+                        fetch = partial(suggestion_service.load_fundamentals, today_day, limiter=fetcher.BULK_LIMITER)
+                        for sym, bundle in zip(new, pool.map(fetch, new)):
                             bundles[sym] = bundle
+            if require_fundamentals:
+                missing = sum(1 for b in bundles.values() if not suggestion_service.has_info(b))
+                caveats.append(f"{missing} of {len(bundles)} shortlisted stocks had no fundamentals (Yahoo returned "
+                               "nothing for them, even after retries), so they could not be scored.")
             today_close = {sym: market_data.latest_close(sym) for sym in bundles}
 
             def bundle_for(sym: str, day: pd.Timestamp, cut: pd.DataFrame) -> dict:

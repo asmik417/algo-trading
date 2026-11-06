@@ -28,7 +28,7 @@ def no_network_fundamentals(tmp_path, monkeypatch):
 
     monkeypatch.setattr(engine_config, "FUNDAMENTALS_CACHE_DIR", str(tmp_path / "fundamentals"))
     monkeypatch.setattr(fetcher, "fetch_fundamental_bundle",
-                        lambda symbol: {"info": {}, "quarterly": [], "cashflow": [], "ok": False})
+                        lambda symbol, **kw: {"info": {}, "quarterly": [], "cashflow": [], "ok": False})
     # NIFTY benchmark: unavailable unless a test fakes it (tests/test_tracker.py does).
     from app.services import market_data
 

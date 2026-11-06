@@ -57,7 +57,7 @@ OPEN_PARAMS = {"rsi_max": 100.0, "max_3m_runup_pct": 500.0, "min_volume_ratio": 
 def market(client, tmp_path, monkeypatch):
     fetches: list[str] = []
 
-    def fake_bundle(sym):
+    def fake_bundle(sym, **kw):
         fetches.append(sym)
         return BUNDLES.get(sym, {"info": {}, "quarterly": [], "cashflow": [], "ok": False})
 
@@ -143,7 +143,9 @@ def test_rerun_with_new_weights_rescores_from_cache(client, market):
         "w_volume_accumulation": 10, "w_technical_setup": 50, "w_valuation": 10}})
     run2 = _run(client, pid)
     assert run2["status"] == "done"
-    assert len(market) == fetched  # no refetch
+    # Stocks with fundamentals come from the cache; ETFCO's bundle has no info, so it is never cached and is
+    # simply asked for again (an empty answer may be a rate limit, not the truth).
+    assert market[fetched:] == ["ETFCO"]
     _run(client, pid, force_refetch=True)
     assert len(market) > fetched
 

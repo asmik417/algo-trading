@@ -42,24 +42,39 @@ def _fundamentals_path(trading_day: str, symbol: str) -> str:
     return os.path.join(engine_config.FUNDAMENTALS_CACHE_DIR, trading_day, f"{symbol}.pkl")
 
 
-def load_fundamentals(trading_day: str, symbol: str, force_refetch: bool = False) -> dict:
-    """{info, quarterly, cashflow} for (trading_day, symbol): disk cache first, else yfinance.
-    Only successful fetches are cached, so a failure is retried next run."""
+def has_info(bundle: dict | None) -> bool:
+    return bool(bundle and bundle.get("info"))
+
+
+def load_fundamentals(trading_day: str, symbol: str, force_refetch: bool = False, limiter=None) -> dict:
+    """{info, quarterly, cashflow} for (trading_day, symbol): disk cache first, else yfinance (with retries; pass
+    fetcher.BULK_LIMITER for bulk fetches). A bundle without `info` is never cached, and a cached one without
+    `info` (written before this rule) is treated as missing and fetched again."""
     path = _fundamentals_path(trading_day, symbol)
     if not force_refetch and os.path.exists(path):
         try:
             with open(path, "rb") as f:
-                return pickle.load(f)
+                cached = pickle.load(f)
+            if has_info(cached):
+                return cached
+            log.info("Cached fundamentals for %s on %s are empty; fetching again", symbol, trading_day)
         except Exception:
             log.warning("Unreadable fundamentals cache %s; refetching", path)
-    bundle = fetcher.fetch_fundamental_bundle(symbol)
-    if bundle.get("ok"):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = f"{path}.{threading.get_ident()}.tmp"
-        with open(tmp, "wb") as f:
-            pickle.dump(bundle, f)
-        os.replace(tmp, path)
+    bundle = fetcher.fetch_fundamental_bundle(symbol, limiter=limiter)
+    if has_info(bundle):
+        save_fundamentals(trading_day, symbol, bundle)
     return bundle
+
+
+def save_fundamentals(trading_day: str, symbol: str, bundle: dict) -> None:
+    if not has_info(bundle):
+        raise ValueError("refusing to cache a fundamentals bundle without info")
+    path = _fundamentals_path(trading_day, symbol)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{threading.get_ident()}.tmp"
+    with open(tmp, "wb") as f:
+        pickle.dump(bundle, f)
+    os.replace(tmp, path)
 
 
 # --- stage 1: cheap whole-market prefilter ----------------------------------------------
@@ -409,8 +424,9 @@ def execute_run(run_id: int, force_refetch: bool = False) -> None:
             run.status, run.finished_at = "done", utc_now_iso()
             db.commit()
             run_registry.finish(run_id, "done")
-            log.info("Run %s done: universe %s, shortlist %s, scored %s, passed %s, saved %s",
-                     run_id, run.universe_size, len(shortlist), run.scored_size, run.passed_size, len(rows))
+            log.info("Run %s done: universe %s, shortlist %s, scored %s, passed %s, saved %s; %s shortlisted without "
+                     "fundamentals", run_id, run.universe_size, len(shortlist), run.scored_size, run.passed_size,
+                     len(rows), len(shortlist) - run.scored_size)
         except Exception as exc:
             log.exception("Run %s failed", run_id)
             db.rollback()

@@ -31,7 +31,7 @@ def world(clean_db, monkeypatch):
     monkeypatch.setattr(market_data, "panel_day", lambda: END)
     monkeypatch.setattr(market_data, "latest_close", lambda sym: float(market[sym]["Close"].iloc[-1]))
     monkeypatch.setattr(suggestion_service, "load_fundamentals",
-                        lambda day, sym, force=False: fetched.append(sym) or BUNDLE)
+                        lambda day, sym, force=False, limiter=None: fetched.append(sym) or BUNDLE)
     monkeypatch.setattr(backtest_service, "_spawn", backtest_service.execute)  # run inline
     with SessionLocal() as db:
         p = Profile(name="BT", owner="T", params_json=ScreenParams.from_dict(OPEN_PARAMS).to_json(), is_active=True)

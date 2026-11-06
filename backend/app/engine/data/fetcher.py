@@ -1,5 +1,10 @@
-import yfinance as yf
+import threading
+import time
+
 import pandas as pd
+import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
+
 from app.engine.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -122,25 +127,90 @@ def _parse_cashflow(cf) -> list[dict]:
     return out
 
 
-def fetch_fundamental_bundle(symbol: str) -> dict:
-    """Everything the scoring engine needs from yfinance, via one Ticker:
-    {"info": raw yfinance info (trailingPE, returnOnEquity, marketCap, ...),
-     "quarterly": fetch_quarterly_financials shape, "cashflow": fetch_cashflow_trend shape}.
-    The pillars read raw yfinance keys, so `info` is passed through unrenamed.
-    Each part degrades to empty on failure; "ok" is False only if all three failed."""
-    nse_sym = get_nse_symbol(symbol)
+class RateLimiter:
+    """Spaces out request starts across threads (min_interval seconds apart). Shared cooldown: once Yahoo
+    rate-limits any request, every fetch waits until the cooldown has passed."""
+
+    def __init__(self, min_interval: float):
+        self.min_interval = min_interval
+        self._next = 0.0
+        self._lock = threading.Lock()
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._next, _cooldown_until)
+            self._next = start + self.min_interval
+        if start > now:
+            _sleep(start - now)
+
+
+# Bulk fetches (backtests, cache repair): about 2 bundles a second, ~6 Yahoo requests a second.
+BULK_LIMITER = RateLimiter(min_interval=0.5)
+RATE_LIMIT_COOLDOWN_S = 30.0
+RETRIES = 3
+BACKOFF_S = 2.0
+_cooldown_until = 0.0
+_sleep = time.sleep  # replaced in tests
+
+
+def is_rate_limit(exc: BaseException) -> bool:
+    if isinstance(exc, YFRateLimitError):
+        return True
+    text = str(exc)
+    return any(marker in text for marker in ("Too Many Requests", "Rate limited", "429"))
+
+
+def _start_cooldown() -> None:
+    global _cooldown_until
+    _cooldown_until = max(_cooldown_until, time.monotonic() + RATE_LIMIT_COOLDOWN_S)
+
+
+def _fetch_once(nse_sym: str) -> tuple[dict, Exception | None]:
+    """One attempt. `info` first: if it fails nothing else is trusted, because yfinance answers the quarterly and
+    cash-flow calls with silently empty tables when it is rate-limited."""
+    bundle = {"info": {}, "quarterly": [], "cashflow": []}
     ticker = yf.Ticker(nse_sym)
-    bundle, failures = {"info": {}, "quarterly": [], "cashflow": []}, 0
-    for key, load in (("info", lambda: dict(ticker.info or {})),
-                      ("quarterly", lambda: _parse_quarterly(ticker.quarterly_financials)),
+    try:
+        bundle["info"] = dict(ticker.info or {})
+    except Exception as e:
+        return bundle, e
+    if not bundle["info"]:
+        return bundle, None  # Yahoo has nothing for this symbol: genuinely empty, not an error
+    for key, load in (("quarterly", lambda: _parse_quarterly(ticker.quarterly_financials)),
                       ("cashflow", lambda: _parse_cashflow(ticker.cashflow))):
         try:
             bundle[key] = load()
         except Exception as e:
-            failures += 1
             log.warning(f"Could not fetch {key} for {nse_sym}: {e}")
-    bundle["ok"] = failures < 3
-    return bundle
+    return bundle, None
+
+
+def fetch_fundamental_bundle(symbol: str, limiter: RateLimiter | None = None, retries: int = RETRIES) -> dict:
+    """Everything the scoring engine needs from yfinance, via one Ticker:
+    {"info": raw yfinance info (trailingPE, returnOnEquity, marketCap, ...),
+     "quarterly": fetch_quarterly_financials shape, "cashflow": fetch_cashflow_trend shape,
+     "ok": True only when `info` came back, "rate_limited": the last failure was a Yahoo rate limit}.
+    A failed attempt is retried up to `retries` times with exponential backoff; a rate limit also starts a shared
+    cooldown. A symbol Yahoo simply has no data for is not retried. The pillars read raw yfinance keys."""
+    nse_sym = get_nse_symbol(symbol)
+    error: Exception | None = None
+    for attempt in range(retries + 1):
+        if limiter is not None:
+            limiter.wait()
+        elif _cooldown_until > time.monotonic():
+            _sleep(_cooldown_until - time.monotonic())
+        bundle, error = _fetch_once(nse_sym)
+        if error is None:
+            return {**bundle, "ok": bool(bundle["info"]), "rate_limited": False}
+        limited = is_rate_limit(error)
+        if limited:
+            _start_cooldown()
+        log.warning(f"Could not fetch info for {nse_sym} (attempt {attempt + 1} of {retries + 1}"
+                    f"{', rate-limited' if limited else ''}): {error}")
+        if attempt < retries:
+            _sleep(BACKOFF_S * 2 ** attempt)
+    return {"info": {}, "quarterly": [], "cashflow": [], "ok": False, "rate_limited": is_rate_limit(error)}
 
 
 def _safe_row(col, row_name: str) -> float | None:
