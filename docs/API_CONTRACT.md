@@ -406,8 +406,10 @@ export interface EvidencePack { symbol: string; day: string; price: { close: num
 export type AnalystConfidence = 'low' | 'medium' | 'high';
 export type AnalystAction = 'buy' | 'watch' | 'avoid' | 'add' | 'hold' | 'trim' | 'exit';
 export type AnalystRunResult = { status: 'queued' } | AnalystView;
-export interface AnalystView { id: number; symbol: string; day: string; profile_id: number; observations: string[]; anomalies: string[]; bull_case: string; bear_case: string; tests: { claim: string; evidence: 'present' | 'absent' | 'unknown'; note: string }[]; action: AnalystAction; direction: Direction; horizon_sessions: 20; confidence: AnalystConfidence; trigger: string; want_to_know: string; agrees_with_rules: boolean | null; audited: boolean; audit_notes: string[]; model: string; created_at: string; }
+export interface AnalystView { id: number; symbol: string; day: string; profile_id: number; observations: string[]; anomalies: string[]; bull_case: string; bear_case: string; tests: { claim: string; evidence: 'present' | 'absent' | 'unknown'; note: string }[]; action: AnalystAction; direction: Direction; horizon_sessions: 20; confidence: AnalystConfidence; trigger: string; want_to_know: string; agrees_with_rules: boolean | null; audited: boolean; audit_notes: string[]; model: string; cost_usd: number | null; stale_days: number; created_at: string; }
 ```
+Nightly policy (decided 2026-11-06): views are built only for pick-list stocks and open or due positions, and only when the stock's evidence changed since its last view: close moved 3 % or more, a new quarter was filed, a new deal, event or headline appeared, the rules verdict changed, or the market regime changed. Unchanged stocks keep yesterday's view (`AnalystView.stale_days` tells the UI how old it is). Cap `ANALYST_MAX_VIEWS_PER_NIGHT` 30. Model stays Opus 5.5; `ANALYST_EFFORT` defaults to `medium`.
+
 Rules: the model is Claude Opus 5.5 with adaptive thinking; web search is allowed only to fetch news for the symbol and the result is appended to the pack's `headlines` before reasoning. Output is strict JSON. **Audit**: every number in the text fields must appear in the evidence pack (±1 % tolerance, percentages and rupees); on failure the model is re-asked once with the offending numbers listed; a second failure stores the view with `audited: false` and the UI shows it with a warning. `agrees_with_rules` compares `action` to the rules verdict's overall: agreeing pairs are buy↔buy/add, watch↔watch/hold, avoid↔avoid/exit/trim; else false; null when no rules verdict. The analyst is given the **profile's own** rules verdict for the day (the pack's `rules_verdict` is the active strategy's). Views are cached per (symbol, day, profile).
 
 ### Market brief
@@ -440,6 +442,43 @@ A mark is `right` when the change matches the direction: up → change > 0, down
 - **Stock dialog**: an **Analyst view** block under "Our call": action and confidence badges, "agrees with rules" chip, anomalies first, bull and bear case side by side, the tests table, trigger and want-to-know lines, the audit warning when `audited` is false, and a **Run analyst** button when `analyst` is null (polls until the view exists). The evidence pack is a fourth row in the Details accordion.
 - **`/scorecard`**: controls for profile, source and horizon; stat tiles (verdicts, marked, hit rate, average change); tables by source, action, signal and month; the worst-misses list with a link to each symbol's dialog.
 - Sidebar order: Stocks, Tracker, Holdings, Scorecard, Loss Analysis, Backtest, Strategies.
+
+---
+
+### Backtest, plain mode (story, money at work, winners vs losers, replay, experiments)
+
+The results page must be readable by someone who has never traded. Numbers stay in the API; the frontend turns them into fixed plain sentences (no LLM).
+
+`BacktestSummary` gains: `invested_total: number` (sum of `invested` over all trades), `peak_capital: number`, `peak_capital_date: string`, `peak_open_positions: number`, `return_on_peak_pct: number | null` (`total_pnl / peak_capital`), `nifty_period_pct: number | null` (Nifty from start to end date), `best_month: { key: string; pnl: number } | null`, `worst_month: { key: string; pnl: number } | null`, `quarters_from_filings: number`, `quarters_from_yfinance: number`.
+`BacktestResults` gains `capital_curve: { date: string; at_work: number; open_positions: number }[]` (money invested in open trades per session) and `splits: SplitRow[]`.
+`BacktestTrade` gains the entry snapshot: `rsi_at_entry: number | null`, `dist_ema20_pct: number | null`, `volume_ratio_at_entry: number | null`, `nifty_vs_ema50_pct_at_entry: number | null`, `regime_at_entry: Regime | null`, `pillars_at_entry: Record<string, number> | null`.
+
+```ts
+export interface SplitSide { trades: number; win_rate_pct: number | null; avg_pnl_pct: number | null; }
+export interface SplitRow { feature: string; condition: string; when_true: SplitSide; when_false: SplitSide; gap_pct: number | null; }
+```
+`splits` is computed over closed trades for a fixed list of conditions, each side needing at least 10 trades (else `gap_pct` null, row still listed): RSI at entry > 65; RSI at entry < 50; price > 5 % above EMA20 at entry; volume ratio > 2 at entry; score ≥ 75; each signal; each stage; each market-cap bucket; Nifty below its 50-day EMA at entry; Nifty fell ≥ 3 % while held; sector fell ≥ 3 % while held; each sector with ≥ 10 trades; entry in a `risk_off` regime; held past 30 sessions. Sorted by |gap_pct| desc. `gap_pct = when_true.win_rate_pct − when_false.win_rate_pct`.
+
+**Trade replay.** `GET /backtests/{id}/trades/{trade_id}` → `{ trade: BacktestTrade; chart: ChartData; nifty: { date: string; close: number }[]; markers: { date: string; kind: 'scan' | 'entry' | 'exit' | 'stop' | 'target'; price: number | null }[]; events: EventRow[] }` where `chart` covers 60 sessions before entry to 10 after exit, with EMA20/EMA50 as in the stock dialog.
+
+**Point-in-time fundamentals.** In `fundamentals_mode: "point_in_time"`, when `quarterly_results` holds at least four quarters filed before the scan date for a symbol, those filed numbers are used for the earnings and valuation pillars and the profit-growth and P/E rules; otherwise the existing yfinance truncation applies. `summary.quarters_from_filings` / `quarters_from_yfinance` count symbol-scans by source, and the caveats name both counts.
+
+**Experiments.** An experiment is one change tested against a baseline.
+`GET /experiments?limit=50` → `Experiment[]`; `POST /experiments` body `{ name, hypothesis, baseline_backtest_id, changes: Record<string, unknown> }` → 201 `Experiment`: the server clones the baseline's strategy as "<name> · exp <id>" with `changes` applied to its params (same validation as PUT /profiles), starts a candidate backtest with the baseline's settings and dates, and links it. `PUT /experiments/{id}` body `{ verdict?: 'kept' | 'discarded', notes?: string }`. `DELETE /experiments/{id}` → 204 (deletes the cloned strategy too if it has no positions).
+
+```ts
+export type ExperimentVerdict = 'pending' | 'kept' | 'discarded';
+export interface Experiment { id: number; name: string; hypothesis: string; baseline_backtest_id: number; candidate_backtest_id: number; candidate_profile_id: number; changes: Record<string, unknown>; verdict: ExperimentVerdict; notes: string; delta: { trades: number; win_rate_pct: number | null; expectancy_r: number | null; total_pnl: number; max_drawdown_pct: number | null } | null; created_at: string; }
+```
+`delta` = candidate minus baseline summary, null until the candidate is done.
+
+**Frontend.**
+- Results page top = the **story**, five sentences from the summary: trades and period; invested_total, peak_capital on peak_capital_date in peak_open_positions stocks; total_pnl and return_on_peak_pct versus nifty_period_pct; win rate with average winner and loser in ₹ (avg_win_pct × capital_per_trade); best and worst month. Below it the existing tiles, each with a hover glossary in plain words (fixed dictionary in `lib/glossary.ts`).
+- Money chart shows two lines: cumulative P&L ("your profit so far") and `at_work` ("money invested at the time").
+- A **Winners vs losers** table from `splits` (feature, condition, win rate when true / false, gap, trades), rows with |gap| ≥ 10 points highlighted, each with a "Test this" button that opens the New experiment form with the matching parameter prefilled where one exists.
+- Trades table reads like a passbook: bought on, price, qty, invested, sold on, why, result ₹ and %. Row click opens the **replay** (chart with markers, Nifty line, events, the entry snapshot).
+- `/backtest/experiments`: the log (name, hypothesis, change, baseline vs candidate deltas, verdict, notes) and the New experiment form (baseline backtest, name, hypothesis, parameter changes from the strategy form).
+- Loss-pattern bars stay but move below the splits table.
 
 ---
 
@@ -562,6 +601,13 @@ export interface JobStatus { brain: BrainStatus | null; running: boolean; last_d
 - Backend part 1: **all accepted.** `BrainStatus`, `NightlyBrainBody`, `NightlyBrainStarted` added to the TS block; `JobStatus.brain` added. DATA_MODEL updated (news_items, brain_jobs, long market_context, uid/pulled_day/data_json, source_pulls.inserted). Insider stays `failed` with reason until a browser-session fetch is approved; deals and FII/DII are latest-session only; intraday index pulls store nothing; `fii_pct`/`dii_pct` stay null; ET Markets + Google News for news; results method as described.
 - Backend part 2: **all accepted.** `MarketBrief` gains `audited`, `audit_notes`, `model`. Units, windows, dotted `unavailable` names, sector mapping, regime reading, evidence POST behaviour and the followed set are now in the Evidence pack and Market brief prose. For the analyst view (part 3) the service passes the profile's own rules verdict.
 - Frontend: **all accepted.** `SuggestionSummary.headline` (rebuilt on read); `AnalystConfidence` rename; `analyst` on `SuggestionDetail`/`WatchlistHit`; `AnalystRunResult`; `GET …/analyst-view` takes `profile_id` defaulting to active; agreeing pairs widened to buy↔buy/add, watch↔watch/hold, avoid↔avoid/exit/trim; QuarterRow units stated; scorecard `signal` and directional `avg_change_pct` ("Avg edge") were resolved in the previous commit.
+
+### Resolved 2026-11-06 (guide), part 3 and nightly cost
+- Part 3 proposals: **all accepted** (what the analyst is given, search behaviour and the basic search tool, audit allowances, failure handling, verdict-log mapping, worst ranking, DATA_MODEL additions). `AnalystView` gains `cost_usd` and `stale_days`.
+- Nightly cost: **views only for pick lists and positions, and only when the evidence changed** (rules under "Nightly policy"); cap 30 a night; model unchanged; `ANALYST_EFFORT=medium`.
+- Plan timing note: "Volume is picking up" may only be written when the volume ratio is ≥ 1.2; otherwise "Volume is quiet (0.3× average)". Fix in `plan_service`.
+- Backtests #1 to #3 ran on poisoned fundamentals: **delete them.** Strategy id 8: delete it only if the backend agent created it for a test and nothing references it; otherwise leave it.
+- New: "Backtest, plain mode" section above.
 
 ### Open
 - 2026-11-05 (frontend): **`WatchlistItem` error rows contradict their type.** The prose says an unknown or unscorable symbol comes back with `error` set "and score fields null", but `WatchlistItem extends SuggestionSummary`, where `id`, `score`, `price`, `entry_optimal`, `stop_loss`, `target`, `risk_reward`, `horizon_days`, `stage`, `signal`, `planned_exit_date` are all non-null, and `filters: FilterResult` is required. An unknown symbol also has no persisted suggestion, so there is no real `id`. Proposal: a discriminated union, so neither side has to guess:

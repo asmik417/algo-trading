@@ -125,6 +125,16 @@ Fixed reason tags (`GET /api/v1/reviews/tags`):
 | error | text nullable | |
 | started_at, finished_at, created_at | str | |
 
+## experiments
+| column | type | notes |
+|---|---|---|
+| name, hypothesis, notes | text | |
+| baseline_backtest_id, candidate_backtest_id | FK backtests | |
+| candidate_profile_id | FK profiles | the cloned strategy |
+| changes_json | text | params changed from the baseline |
+| verdict | str | pending / kept / discarded |
+| created_at | str | |
+
 ## backtest_trades
 | column | type | notes |
 |---|---|---|
@@ -136,6 +146,7 @@ Fixed reason tags (`GET /api/v1/reviews/tags`):
 | exit_date, exit_price | nullable | |
 | exit_reason | str | target_hit, stop_hit, horizon_closed, open |
 | pnl, pnl_pct, r_multiple, days_held, mfe_pct, mae_pct, nifty_pct | float nullable | |
+| rsi_at_entry, dist_ema20_pct, volume_ratio_at_entry, nifty_vs_ema50_pct_at_entry, regime_at_entry, pillars_json | nullable | entry snapshot for the winners-vs-losers splits |
 | tags_json | text | loss-pattern tags |
 
 ## source_pulls
