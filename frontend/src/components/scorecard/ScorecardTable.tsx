@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import type { ReactNode } from 'react';
 import { pnlClass } from '../../lib/colors';
 import { formatNumber, formatPct } from '../../lib/format';
-import type { ScorecardRow } from '../../types/brain';
+import type { ScorecardRow } from '../../types/api';
 import { Card } from '../ui/Card';
 
 export function ScorecardTable({
@@ -29,7 +29,7 @@ export function ScorecardTable({
                 <th scope="col" className="px-4 py-2 text-left font-medium">
                   {keyHeader}
                 </th>
-                {['Verdicts', 'Marked', 'Right', 'Hit rate', 'Avg change'].map((h) => (
+                {['Verdicts', 'Marked', 'Right', 'Hit rate', 'Avg edge'].map((h) => (
                   <th
                     key={h}
                     scope="col"

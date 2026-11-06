@@ -2,7 +2,6 @@
 import * as mockDb from '../mocks/db';
 import { mockCall } from '../mocks/respond';
 import type { SuggestionDetail, SuggestionsResponse } from '../types/api';
-import type { WithAnalyst } from '../types/brain';
 import { USE_MOCKS, http } from './client';
 
 export const getSuggestions = (
@@ -18,7 +17,7 @@ export const getSuggestions = (
         .then((r) => r.data);
 
 /** Carries `analyst` per "The brain" (an older backend leaves it out; the dialog then asks GET analyst-view). */
-export const getSuggestionDetail = (id: number): Promise<WithAnalyst<SuggestionDetail>> =>
+export const getSuggestionDetail = (id: number): Promise<SuggestionDetail> =>
   USE_MOCKS
     ? mockCall(() => mockDb.getSuggestionDetail(id))
-    : http.get<WithAnalyst<SuggestionDetail>>(`/suggestions/${id}`).then((r) => r.data);
+    : http.get<SuggestionDetail>(`/suggestions/${id}`).then((r) => r.data);

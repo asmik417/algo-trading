@@ -1,7 +1,7 @@
 // The market backdrop as small labelled tiles (contract "The brain", MarketContext). Missing values show "—".
 import { formatINR, formatNumber, formatPct } from '../../lib/format';
 import { pnlClass } from '../../lib/colors';
-import type { MarketContext } from '../../types/brain';
+import type { MarketContext } from '../../types/api';
 
 const crore = (v: number | null) =>
   v === null ? '—' : `${formatINR(v, { signed: true, digits: 0 })} cr`;

@@ -22,7 +22,7 @@ import { ACTION_LABEL, ACTION_TONE } from '../lib/brain';
 import { pnlClass } from '../lib/colors';
 import { formatNumber, formatPct } from '../lib/format';
 import { useActiveProfile } from '../store/activeProfile';
-import type { AnalystAction } from '../types/brain';
+import type { AnalystAction } from '../types/api';
 
 const SOURCES: { value: ScorecardSource; label: string }[] = [
   { value: 'both', label: 'Both' },
@@ -35,6 +35,8 @@ const HORIZONS: { value: ScorecardHorizon; label: string }[] = [
   { value: 60, label: '60 sessions' },
 ];
 const SOURCE_LABEL: Record<string, string> = { rules: 'Rules', analyst: 'Analyst' };
+/** by_signal's key for verdicts with no rules signal that day (contract "Verdict log and scorecard"). */
+const NO_SIGNAL = 'No signal';
 
 const isSource = (v: string | null): v is ScorecardSource =>
   v === 'both' || v === 'rules' || v === 'analyst';
@@ -124,10 +126,10 @@ export default function ScorecardPage() {
             sub={`${formatNumber(t.right)} of ${formatNumber(t.marked)} right`}
           />
           <Stat
-            label="Average change"
+            label="Avg edge"
             value={formatPct(t.avg_change_pct)}
             valueClassName={pnlClass(t.avg_change_pct)}
-            sub={`price change after ${shown} sessions`}
+            sub={`change in the call's direction after ${shown} sessions; sideways calls excluded`}
           />
         </div>
         <div className="grid gap-4 2xl:grid-cols-2">
@@ -147,7 +149,13 @@ export default function ScorecardPage() {
             title="By signal"
             keyHeader="Signal"
             rows={data.by_signal}
-            renderKey={(k) => <SignalBadge signal={k} />}
+            renderKey={(k) =>
+              k === NO_SIGNAL ? (
+                <span className="text-ink-muted">{NO_SIGNAL}</span>
+              ) : (
+                <SignalBadge signal={k} />
+              )
+            }
           />
           <ScorecardTable
             title="By month"

@@ -49,6 +49,10 @@ import type {
   SuggestionSummary,
   SuggestionsResponse,
   UpdateProfileBody,
+  AnalystRunResult,
+  AnalystView,
+  EvidencePack,
+  WatchlistHit,
 } from '../types/api';
 import { buildChart } from './chart';
 import {
@@ -73,7 +77,6 @@ import {
   riskReward,
   summarizeParams,
 } from './fixtures';
-import type { AnalystRunResult, AnalystView, EvidencePack, WithAnalyst } from '../types/brain';
 import { signalConfidence } from './backtests';
 import * as brain from './brain';
 import { buildDecision } from './decision';
@@ -123,12 +126,12 @@ const INDUSTRIES: Record<string, string> = {
 
 const suggestionId = (profileId: number, index: number): number => profileId * 100 + index + 1;
 
-/** A summary before its verdict is attached. */
-type Unverdicted = Omit<SuggestionSummary, 'verdict'>;
+/** A summary before its verdict and headline are attached (both are rebuilt on read, like the backend). */
+type Unverdicted = Omit<SuggestionSummary, 'verdict' | 'headline'>;
 
 function baseSummaries(): Omit<
   SuggestionSummary,
-  'id' | 'rank' | 'is_tracked' | 'position_id' | 'verdict'
+  'id' | 'rank' | 'is_tracked' | 'position_id' | 'verdict' | 'headline'
 >[] {
   return SUGGESTION_SEEDS.map((s) => ({
     ...s,
@@ -486,8 +489,22 @@ function withVerdict<T extends Unverdicted>(
   s: T,
   profile: Profile,
   passedAllRules: boolean,
-): T & { verdict: Verdict } {
-  return { ...s, verdict: verdictFor(s, profile, passedAllRules) };
+): T & { verdict: Verdict; headline: string } {
+  const verdict = verdictFor(s, profile, passedAllRules);
+  // SuggestionSummary.headline is the Decision headline, so build the same decision the detail would.
+  const full: SuggestionSummary = { ...s, verdict, headline: '' };
+  const chart = buildChart(s.symbol, s.price, s.change_3m_pct ?? 0);
+  const decision = buildDecision(
+    full,
+    buildPlan(full),
+    buildIndicators(s.symbol, s.price, chart, s.volume_ratio_20d),
+    buildFundamentals(s),
+    chart,
+    // The headline never uses the track record, and calling signalConfidence here would reach backtests.ts while
+    // this module is still initialising (positions are built at load time).
+    { signal_win_rate_pct: null, trades: null, backtest_id: null },
+  );
+  return { ...s, verdict, headline: decision.headline };
 }
 
 function buildDetail(
@@ -502,6 +519,7 @@ function buildDetail(
   return {
     ...s,
     trading_day: TRADING_DAY,
+    analyst: null, // attached on read (withAnalyst), so a view created later shows up
     decision: buildDecision(
       s,
       plan,
@@ -930,6 +948,28 @@ function initialState(): MockState {
         last_trading_day: TRADING_DAY,
         next_scheduled: '2026-11-05T13:00:00Z',
         last_summary: { marked: 7, closed_target: 1, closed_stop: 0, marked_due: 1 },
+        brain: {
+          running: false,
+          last_day: TRADING_DAY,
+          sources: [
+            { source: 'bhavcopy', day: TRADING_DAY, status: 'ok', records: 2214, error: null },
+            { source: 'results', day: TRADING_DAY, status: 'ok', records: 38, error: null },
+            { source: 'shareholding', day: TRADING_DAY, status: 'ok', records: 112, error: null },
+            { source: 'deals', day: TRADING_DAY, status: 'ok', records: 17, error: null },
+            { source: 'fii_dii', day: TRADING_DAY, status: 'ok', records: 1, error: null },
+            { source: 'news', day: TRADING_DAY, status: 'ok', records: 64, error: null },
+            {
+              source: 'insider',
+              day: TRADING_DAY,
+              status: 'failed',
+              records: 0,
+              error: 'NSE corporates-pit returns no rows to non-browser clients',
+            },
+          ],
+          packs_built: 14,
+          views_built: 13,
+          views_failed: 0,
+        },
       } satisfies JobStatus,
     },
   };
@@ -1159,6 +1199,7 @@ const MAX_WATCHLIST = 50;
 const DETAIL_ONLY = new Set([
   'trading_day',
   'decision',
+  'analyst',
   'reasons',
   'plan',
   'score_breakdown',
@@ -1200,7 +1241,13 @@ function buildWatchlistItem(profile: Profile, symbol: string): WatchlistItem {
     : { ...syntheticSummary(id, symbol, row.close, profile), source: 'watchlist' };
   const detail = buildDetail(summary, profile, !inList);
   state.adhoc.push({ profileId: profile.id, detail });
-  return { ...summaryOf(detail), decision: detail.decision, filters: detail.filters, error: null };
+  return {
+    ...summaryOf(detail),
+    decision: detail.decision,
+    analyst: analystFor(detail, profile.id),
+    filters: detail.filters,
+    error: null,
+  };
 }
 
 /** Results grow as the run analyses symbols (in requested order), like the real backend. */
@@ -1296,8 +1343,7 @@ export function getRunResults(runId: number): WatchlistResults {
     if (item.error !== null) return item; // a miss is never tracked
     const pos = isTracked(run.profile_id, item.symbol);
     const stored = state.adhoc.find((a) => a.detail.id === item.id);
-    // "WatchlistHit gains analyst" (contract "The brain"); the TS block does not declare it yet.
-    const hit: WithAnalyst<typeof item> = {
+    const hit: WatchlistHit = {
       ...item,
       is_tracked: !!pos,
       position_id: pos?.id ?? null,
@@ -1403,7 +1449,7 @@ export function getSuggestions(profileId: number, runId: number | 'latest'): Sug
   return { run, items: run ? suggestionsFor(profile) : [] };
 }
 
-export function getSuggestionDetail(id: number): WithAnalyst<SuggestionDetail> {
+export function getSuggestionDetail(id: number): SuggestionDetail {
   if (id >= ADHOC_ID_START) {
     const entry =
       state.adhoc.find((a) => a.detail.id === id) ?? fail(404, `Suggestion ${id} not found`);
@@ -1501,7 +1547,7 @@ function withTracking(entry: { profileId: number; detail: SuggestionDetail }): S
   return { ...entry.detail, is_tracked: !!pos, position_id: pos?.id ?? null };
 }
 
-export function analyzeStock(symbol: string, profileId: number): WithAnalyst<SuggestionDetail> {
+export function analyzeStock(symbol: string, profileId: number): SuggestionDetail {
   const profile = findProfile(profileId);
   const row = findRow(symbol);
   const existing = state.adhoc.find(
@@ -1535,7 +1581,7 @@ function analystFor(detail: SuggestionDetail, profileId: number): AnalystView | 
   return brain.viewFor(detail, detail.decision, packFor(detail), profileId);
 }
 
-function withAnalyst(detail: SuggestionDetail, profileId: number): WithAnalyst<SuggestionDetail> {
+function withAnalyst(detail: SuggestionDetail, profileId: number): SuggestionDetail {
   return { ...detail, analyst: analystFor(detail, profileId) };
 }
 
@@ -1575,13 +1621,12 @@ export function requestAnalystView(symbol: string, profileId: number): AnalystRu
   return brain.requestView(detail, detail.decision, packFor(detail), profileId);
 }
 
-/** The contract's GET takes only `day`, so the mock answers for the active strategy (see "Proposed changes"). */
-export function getAnalystView(symbol: string, day?: string): AnalystView {
+/** The view for (symbol, day, strategy); the strategy defaults to the active one. */
+export function getAnalystView(symbol: string, day?: string, profileId?: number): AnalystView {
   requireBrainDay(day, 'analyst view');
-  const detail = detailForSymbol(symbol, getActiveProfile().id);
-  return (
-    analystFor(detail, getActiveProfile().id) ?? fail(404, `No analyst view for ${detail.symbol}`)
-  );
+  const pid = profileId ?? getActiveProfile().id;
+  const detail = detailForSymbol(symbol, pid);
+  return analystFor(detail, pid) ?? fail(404, `No analyst view for ${detail.symbol}`);
 }
 
 // ---------------------------------------------------------------- positions

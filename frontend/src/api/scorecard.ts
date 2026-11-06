@@ -1,7 +1,7 @@
 // The scorecard (contract "The brain", Verdict log and scorecard): how often rules and analyst calls were right.
 import { mockCall } from '../mocks/respond';
 import * as scorecardMock from '../mocks/scorecard';
-import type { Scorecard, VerdictSource } from '../types/brain';
+import type { Scorecard, VerdictSource } from '../types/api';
 import { USE_MOCKS, http } from './client';
 
 export type ScorecardSource = VerdictSource | 'both';

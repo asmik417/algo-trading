@@ -1,13 +1,14 @@
 // Mock of the verdict log and scorecard (contract "The brain", Verdict log and scorecard).
 // Each strategy gets a fixed, seeded log; marks come from one price series per symbol, so they agree with each other.
-import type { ChartData, Direction } from '../types/api';
 import type {
+  ChartData,
+  Direction,
   AnalystAction,
   LoggedVerdict,
   Scorecard,
   ScorecardRow,
   VerdictSource,
-} from '../types/brain';
+} from '../types/api';
 import { buildChart } from './chart';
 import { round, seeded } from './dates';
 import { getProfile } from './db';
@@ -31,11 +32,8 @@ const SIGNALS = [
   '🔴 Weak / Invalidated',
 ];
 
-/** The log entry plus the one field the scorecard groups by that LoggedVerdict does not carry. */
-interface Entry {
-  v: LoggedVerdict;
-  signal: string;
-}
+/** by_signal's key for verdicts with no rules signal that day (contract "Verdict log and scorecard"). */
+export const NO_SIGNAL = 'No signal';
 
 const series = new Map<string, ChartData>();
 function seriesFor(symbol: string, close: number): ChartData {
@@ -78,9 +76,9 @@ function pickAction(
   return r < 0.45 ? 'buy' : r < 0.8 ? 'watch' : 'avoid';
 }
 
-const logs = new Map<number, Entry[]>();
+const logs = new Map<number, LoggedVerdict[]>();
 
-function buildLog(profileId: number): Entry[] {
+function buildLog(profileId: number): LoggedVerdict[] {
   const size = LOG_SIZE[profileId] ?? { rules: 0, analyst: 0 };
   const rand = seeded(`verdict-log:${profileId}`);
   const symbols: [string, number, string | null][] = [
@@ -92,7 +90,7 @@ function buildLog(profileId: number): Entry[] {
     ]),
   ];
   const seen = new Set<string>();
-  const out: Entry[] = [];
+  const out: LoggedVerdict[] = [];
   const sources: VerdictSource[] = [
     ...Array<VerdictSource>(size.rules).fill('rules'),
     ...Array<VerdictSource>(size.analyst).fill('analyst'),
@@ -125,33 +123,36 @@ function buildLog(profileId: number): Entry[] {
           right: isRight(direction, change_pct),
         };
       });
+      // The rules signal of that symbol on that day; some analyst views had no rules verdict that day.
+      const signal =
+        source === 'analyst' && rand() < 0.2
+          ? null
+          : (knownSignal ?? SIGNALS[Math.floor(rand() * SIGNALS.length)]);
       out.push({
-        signal: knownSignal ?? SIGNALS[Math.floor(rand() * SIGNALS.length)],
-        v: {
-          id: profileId * 1000 + out.length + 1,
-          symbol,
-          day: s.dates[i],
-          source,
-          profile_id: profileId,
-          action,
-          direction,
-          level:
-            direction === 'up'
-              ? round(c0 * 1.12, 2)
-              : direction === 'down'
-                ? round(c0 * 0.93, 2)
-                : null,
-          close: c0,
-          marks,
-        },
+        id: profileId * 1000 + out.length + 1,
+        symbol,
+        day: s.dates[i],
+        source,
+        profile_id: profileId,
+        action,
+        direction,
+        level:
+          direction === 'up'
+            ? round(c0 * 1.12, 2)
+            : direction === 'down'
+              ? round(c0 * 0.93, 2)
+              : null,
+        close: c0,
+        signal,
+        marks,
       });
       break;
     }
   }
-  return out.sort((a, b) => b.v.day.localeCompare(a.v.day) || b.v.id - a.v.id);
+  return out.sort((a, b) => b.day.localeCompare(a.day) || b.id - a.id);
 }
 
-function logFor(profileId: number): Entry[] {
+function logFor(profileId: number): LoggedVerdict[] {
   let log = logs.get(profileId);
   if (!log) {
     log = buildLog(profileId);
@@ -162,28 +163,33 @@ function logFor(profileId: number): Entry[] {
 
 const markAt = (v: LoggedVerdict, horizon: Horizon) => v.marks.find((m) => m.sessions === horizon);
 
-function rowOf(key: string, entries: Entry[], horizon: Horizon): ScorecardRow {
-  const marks = entries.map((e) => markAt(e.v, horizon)).filter((m) => m !== undefined);
-  const right = marks.filter((m) => m.right).length;
+function rowOf(key: string, verdicts: LoggedVerdict[], horizon: Horizon): ScorecardRow {
+  const marked = verdicts.flatMap((v) => {
+    const m = markAt(v, horizon);
+    return m ? [{ v, m }] : [];
+  });
+  const right = marked.filter((x) => x.m.right).length;
+  // avg_change_pct is the edge: change in the call's direction (up → change, down → −change), sideways excluded.
+  const edges = marked
+    .filter((x) => x.v.direction !== 'sideways')
+    .map((x) => (x.v.direction === 'up' ? x.m.change_pct : -x.m.change_pct));
   return {
     key,
-    verdicts: entries.length,
-    marked: marks.length,
+    verdicts: verdicts.length,
+    marked: marked.length,
     right,
-    hit_rate_pct: marks.length ? round((right / marks.length) * 100, 1) : null,
-    avg_change_pct: marks.length
-      ? round(marks.reduce((a, m) => a + m.change_pct, 0) / marks.length, 1)
-      : null,
+    hit_rate_pct: marked.length ? round((right / marked.length) * 100, 1) : null,
+    avg_change_pct: edges.length ? round(edges.reduce((a, e) => a + e, 0) / edges.length, 1) : null,
   };
 }
 
 function groupRows(
-  entries: Entry[],
-  keyOf: (e: Entry) => string,
+  entries: LoggedVerdict[],
+  keyOf: (v: LoggedVerdict) => string,
   order: string[],
   horizon: Horizon,
 ): ScorecardRow[] {
-  const groups = new Map<string, Entry[]>();
+  const groups = new Map<string, LoggedVerdict[]>();
   for (const e of entries) groups.set(keyOf(e), [...(groups.get(keyOf(e)) ?? []), e]);
   const keys = [...groups.keys()].sort((a, b) => {
     const ia = order.indexOf(a),
@@ -210,9 +216,9 @@ export function getScorecard(profileId: number, source: string, horizon: number)
     fail(422, 'source must be rules, analyst or both');
   if (!HORIZONS.includes(horizon as Horizon)) fail(422, 'horizon must be 20, 40 or 60');
   const h = horizon as Horizon;
-  const entries = logFor(profileId).filter((e) => source === 'both' || e.v.source === source);
+  const entries = logFor(profileId).filter((v) => source === 'both' || v.source === source);
   const worst = entries
-    .map((e) => ({ v: e.v, m: markAt(e.v, h) }))
+    .map((v) => ({ v, m: markAt(v, h) }))
     .filter((x) => x.m !== undefined && !x.m.right)
     .sort((a, b) => missSize(b.v, b.m?.change_pct ?? 0) - missSize(a.v, a.m?.change_pct ?? 0))
     .slice(0, 10)
@@ -222,10 +228,10 @@ export function getScorecard(profileId: number, source: string, horizon: number)
     source: source as Scorecard['source'],
     horizon: h,
     total: rowOf('total', entries, h),
-    by_source: groupRows(entries, (e) => e.v.source, ['rules', 'analyst'], h),
-    by_action: groupRows(entries, (e) => e.v.action, ACTION_ORDER, h),
-    by_signal: groupRows(entries, (e) => e.signal, SIGNALS, h),
-    by_month: groupRows(entries, (e) => e.v.day.slice(0, 7), [], h),
+    by_source: groupRows(entries, (v) => v.source, ['rules', 'analyst'], h),
+    by_action: groupRows(entries, (v) => v.action, ACTION_ORDER, h),
+    by_signal: groupRows(entries, (v) => v.signal ?? NO_SIGNAL, [...SIGNALS, NO_SIGNAL], h),
+    by_month: groupRows(entries, (v) => v.day.slice(0, 7), [], h),
     worst,
   };
 }

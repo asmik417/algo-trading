@@ -53,7 +53,7 @@ export function WatchlistTable({ items, onOpen, onTrack, isTracking }: Props) {
             ) : (
               <tr
                 key={item.id}
-                title={item.decision.headline}
+                title={item.headline}
                 tabIndex={0}
                 onClick={() => onOpen(item)}
                 onKeyDown={(e) => {

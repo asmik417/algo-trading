@@ -4,8 +4,8 @@ import clsx from 'clsx';
 import { ACTION_LABEL, ACTION_TONE } from '../../lib/brain';
 import { pnlClass } from '../../lib/colors';
 import { formatDate, formatINR, formatPct } from '../../lib/format';
-import type { Direction } from '../../types/api';
-import type { LoggedVerdict } from '../../types/brain';
+import type { Direction, LoggedVerdict } from '../../types/api';
+import { SignalBadge } from '../stocks/SignalBadge';
 import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
 
@@ -43,6 +43,9 @@ export function WorstMisses({
                   Source
                 </th>
                 <th scope="col" className="px-3 py-2 text-left font-medium">
+                  Signal
+                </th>
+                <th scope="col" className="px-3 py-2 text-left font-medium">
                   Call
                 </th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">
@@ -74,6 +77,13 @@ export function WorstMisses({
                       {formatDate(v.day)}
                     </td>
                     <td className="px-3 py-2 text-ink">{SOURCE_LABEL[v.source]}</td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {v.signal === null ? (
+                        <span className="text-ink-muted">No signal</span>
+                      ) : (
+                        <SignalBadge signal={v.signal} />
+                      )}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2">
                       <Badge tone={ACTION_TONE[v.action]}>{ACTION_LABEL[v.action]}</Badge>{' '}
                       <span className="text-xs text-ink-muted">

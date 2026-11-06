@@ -1,7 +1,7 @@
 // Market brief (/market): the day's regime, facts, paragraph, leading and lagging indices and the market backdrop,
 // plus the past briefs. ?day=YYYY-MM-DD picks one; otherwise the latest is shown.
 import clsx from 'clsx';
-import { Newspaper, TrendingDown, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Newspaper, TrendingDown, TrendingUp } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/layout/PageHeader';
 import { MarketContextTiles } from '../components/market/MarketContextTiles';
@@ -14,7 +14,7 @@ import { useMarketBrief, useMarketBriefs } from '../hooks/useBrain';
 import { REGIME_LABEL, REGIME_TONE } from '../lib/brain';
 import { pnlClass } from '../lib/colors';
 import { formatDate, formatDateTime, formatPct } from '../lib/format';
-import type { MarketBrief } from '../types/brain';
+import type { MarketBrief } from '../types/api';
 
 function IndexList({
   title,
@@ -60,6 +60,26 @@ function BriefView({ brief }: { brief: MarketBrief }) {
           </Badge>
           <p className="text-base font-medium text-ink">{brief.stance}</p>
         </div>
+        {!brief.audited && (
+          <div
+            role="note"
+            data-testid="brief-fallback"
+            className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            <p className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              The model&apos;s text did not pass the number check, so the paragraph and stance below
+              are the plain text built from the facts.
+            </p>
+            {brief.audit_notes.length > 0 && (
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-11 text-xs">
+                {brief.audit_notes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <p className="mt-3 text-sm leading-relaxed text-ink">{brief.paragraph}</p>
         <h4 className="mt-4 text-xs font-semibold uppercase tracking-wide text-ink-muted">Facts</h4>
         <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-ink" data-testid="brief-facts">
@@ -72,8 +92,11 @@ function BriefView({ brief }: { brief: MarketBrief }) {
           <IndexList title="Laggards this week" rows={brief.laggards} up={false} />
         </div>
         <p className="mt-4 text-xs text-ink-muted">
-          Every number comes from the day&apos;s market data; the text is written from those
-          numbers. Written {formatDateTime(brief.created_at)}.
+          Every number comes from the day&apos;s market data;{' '}
+          {brief.audited
+            ? `${brief.model} wrote the text from those numbers`
+            : 'the text is built from the facts alone'}
+          . {formatDateTime(brief.created_at)}.
         </p>
       </Card>
       <div>

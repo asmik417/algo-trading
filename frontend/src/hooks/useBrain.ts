@@ -11,7 +11,7 @@ import {
   runAnalystView,
 } from '../api/brain';
 import { isApiError } from '../api/client';
-import type { AnalystView } from '../types/brain';
+import type { AnalystView } from '../types/api';
 import { keys } from './queryKeys';
 
 /** A 404 means "none exists yet" for these resources, which is a normal state, not an error. */
@@ -86,7 +86,7 @@ export function useAnalyst(
 
   const view = useQuery({
     queryKey: key,
-    queryFn: () => orNullOn404(() => getAnalystView(symbol, day)),
+    queryFn: () => orNullOn404(() => getAnalystView(symbol, day, profileId ?? undefined)),
     initialData: embedded,
     staleTime: 60 * 1000,
     retry: false,

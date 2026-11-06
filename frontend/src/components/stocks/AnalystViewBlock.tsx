@@ -11,7 +11,7 @@ import {
   EVIDENCE_TONE,
 } from '../../lib/brain';
 import { formatDate, formatDateTime } from '../../lib/format';
-import type { AnalystView } from '../../types/brain';
+import type { AnalystView } from '../../types/api';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { ErrorNotice } from '../ui/ErrorNotice';

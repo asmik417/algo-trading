@@ -1,14 +1,18 @@
 // Mock of "The brain": market briefs, evidence packs and analyst views (contract section "The brain").
 // Pure builders plus small in-memory stores; db.ts wires them to the stock endpoints because it owns the stock data.
-import type { Decision, Indicators, Plan, SuggestionSummary } from '../types/api';
 import type {
+  Decision,
+  Indicators,
+  Overall,
+  Plan,
+  SuggestionSummary,
   AnalystAction,
   AnalystView,
   EvidencePack,
   MarketBrief,
   MarketContext,
-} from '../types/brain';
-import { formatNumber } from '../lib/format';
+} from '../types/api';
+import { formatDate, formatNumber } from '../lib/format';
 import { NOW_ISO, TRADING_DAY, round, seeded, shiftDays, weekdaysBetween } from './dates';
 import { fail } from './respond';
 
@@ -80,6 +84,9 @@ const BRIEFS: MarketBrief[] = [
     paragraph:
       'The market is under pressure: the Nifty is 1.8% below its 50-day average, volatility is above 20 and foreign investors have sold more than ₹2,000 cr for three sessions. Selling is broad, with small caps down 5.2% this week, while defensive FMCG and pharma held up.',
     stance: 'Small caps weak; do not add, hold winners with stops.',
+    audited: true,
+    audit_notes: [],
+    model: 'claude-opus-5-5',
     created_at: '2026-11-04T13:20:00Z',
   },
   {
@@ -100,9 +107,16 @@ const BRIEFS: MarketBrief[] = [
       'FIIs sold a net ₹910 cr; DIIs bought ₹1,180 cr.',
       'Advances to declines were 1.04.',
     ],
+    // This brief failed its audit twice, so it carries the deterministic fallback: the facts as the paragraph and the
+    // fixed stance for its regime (contract "Market brief").
     paragraph:
-      'A mixed session: the Nifty holds just above its 50-day average with volatility at 16.8. Foreign selling of ₹910 cr was absorbed by domestic buying. Banks led and metals lagged.',
-    stance: 'Mixed tape; buy only the strongest setups, keep position sizes normal.',
+      'Nifty 50 closed at 24,620.1, 0.4% above its 50-day EMA, and slipped 0.6% this week. India VIX is 16.8, between 15 and 20. FIIs sold a net ₹910 cr; DIIs bought ₹1,180 cr. Advances to declines were 1.04.',
+    stance: 'Neutral market: buy only the strongest setups, keep position sizes normal.',
+    audited: false,
+    audit_notes: [
+      '"₹1,240 cr of domestic buying" differs from the facts\' ₹1,180 cr by more than 1%',
+    ],
+    model: 'claude-opus-5-5',
     created_at: `${PREV_DAY}T13:20:00Z`,
   },
 ];
@@ -130,7 +144,8 @@ export function buildEvidencePack(
   const rand = seeded(`pack:${s.symbol}`);
   const profit = s.profit_yoy_pct;
   const baseRev = round(800 + rand() * 4000, 1);
-  const quarters = ['Q2 FY27', 'Q1 FY27', 'Q4 FY26', 'Q3 FY26'].map((period, i) => {
+  // period = quarter-end date; money in ₹ crore, eps in ₹ (contract "Evidence pack").
+  const quarters = ['2026-09-30', '2026-06-30', '2026-03-31', '2025-12-31'].map((period, i) => {
     const revenue = round(baseRev * (1 - i * 0.04), 1);
     const margin = round(12 + rand() * 10, 1);
     const net = round(
@@ -151,7 +166,7 @@ export function buildEvidencePack(
   const deliveryNow = round(30 + rand() * 30, 0);
   const deliveryPrev = round(deliveryNow + (rand() - 0.6) * 20, 0);
   const unavailable = [
-    ...(noOwnership ? ['ownership'] : []),
+    ...(noOwnership ? ['ownership'] : ['ownership.fii_pct', 'ownership.dii_pct']),
     ...(s.symbol.length % 3 === 0 ? ['headlines'] : []),
   ];
   return {
@@ -178,8 +193,9 @@ export function buildEvidencePack(
           as_of: '2026-09-30',
           promoter_pct: round(40 + rand() * 25, 2),
           promoter_change_pct: round((rand() - 0.5) * 2, 2),
-          fii_pct: round(10 + rand() * 15, 2),
-          dii_pct: round(8 + rand() * 12, 2),
+          // NSE's shareholding master gives promoter and public only (backend part 1 notes).
+          fii_pct: null,
+          dii_pct: null,
           public_pct: round(10 + rand() * 10, 2),
           pledge_pct: rand() < 0.3 ? round(rand() * 8, 2) : 0,
         },
@@ -235,12 +251,16 @@ const pending = new Map<string, number>(); // key -> time the queued view become
 let nextViewId = 1;
 const keyOf = (symbol: string, day: string, profileId: number) => `${symbol}:${day}:${profileId}`;
 
+/** Agreeing pairs (contract "Analyst view"): buy↔buy/add, watch↔watch/hold, avoid↔avoid/exit/trim. */
+const AGREEING: Record<Overall, AnalystAction[]> = {
+  buy: ['buy', 'add'],
+  watch: ['watch', 'hold'],
+  avoid: ['avoid', 'exit', 'trim'],
+};
 function agrees(action: AnalystAction, s: SuggestionSummary): boolean | null {
   const overall = s.verdict?.overall;
   if (!overall) return null;
-  if (action === 'buy') return overall === 'buy';
-  if (action === 'avoid' || action === 'exit') return overall === 'avoid';
-  return false;
+  return AGREEING[overall].includes(action);
 }
 
 function composeView(
@@ -296,7 +316,7 @@ function composeView(
     profile_id: profileId,
     observations: [
       `Close ₹${p.close}, ${p.change_1m_pct ?? '—'}% over a month and ${p.change_3m_pct ?? '—'}% over three months.`,
-      `Latest quarter (${q0.period}) net profit ₹${q0.net_profit} cr on revenue ₹${q0.revenue} cr, margin ${q0.margin_pct}%.`,
+      `Latest quarter (ended ${formatDate(q0.period)}) net profit ₹${q0.net_profit} cr on revenue ₹${q0.revenue} cr, margin ${q0.margin_pct}%.`,
       `Nifty is ${pack.market.nifty_vs_ema50_pct}% from its 50-day EMA; VIX ${pack.market.vix}.`,
     ],
     anomalies,

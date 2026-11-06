@@ -3,7 +3,7 @@
 import * as brainMock from '../mocks/brain';
 import * as mockDb from '../mocks/db';
 import { mockCall } from '../mocks/respond';
-import type { AnalystRunResult, AnalystView, EvidencePack, MarketBrief } from '../types/brain';
+import type { AnalystRunResult, AnalystView, EvidencePack, MarketBrief } from '../types/api';
 import { USE_MOCKS, http } from './client';
 
 const stockPath = (symbol: string, rest: string) => `/stocks/${encodeURIComponent(symbol)}/${rest}`;
@@ -34,12 +34,21 @@ export const buildEvidence = (symbol: string): Promise<EvidencePack> =>
     ? mockCall(() => mockDb.buildEvidence(symbol), 1200)
     : http.post<EvidencePack>(stockPath(symbol, 'evidence')).then((r) => r.data);
 
-/** GET /stocks/{symbol}/analyst-view: 404 when none exists for that day. */
-export const getAnalystView = (symbol: string, day?: string): Promise<AnalystView> =>
+/** GET /stocks/{symbol}/analyst-view: the view for (day, strategy); the backend defaults to the active strategy. 404 if none. */
+export const getAnalystView = (
+  symbol: string,
+  day?: string,
+  profileId?: number,
+): Promise<AnalystView> =>
   USE_MOCKS
-    ? mockCall(() => mockDb.getAnalystView(symbol, day))
+    ? mockCall(() => mockDb.getAnalystView(symbol, day, profileId))
     : http
-        .get<AnalystView>(stockPath(symbol, 'analyst-view'), { params: day ? { day } : {} })
+        .get<AnalystView>(stockPath(symbol, 'analyst-view'), {
+          params: {
+            ...(day ? { day } : {}),
+            ...(profileId !== undefined ? { profile_id: profileId } : {}),
+          },
+        })
         .then((r) => r.data);
 
 /** POST /stocks/{symbol}/analyst-view: 202 { status: 'queued' }, or 200 with the view if one exists for the day. */

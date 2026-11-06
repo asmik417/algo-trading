@@ -2,9 +2,10 @@
 // Loaded only when the row is opened. Anything listed in `unavailable` is named, never filled in.
 import { ExternalLink, PackageOpen } from 'lucide-react';
 import { useBuildEvidence, useEvidence } from '../../hooks/useBrain';
+import { unavailableLabel } from '../../lib/brain';
 import { pnlClass } from '../../lib/colors';
 import { formatDate, formatINR, formatMultiple, formatNumber, formatPct } from '../../lib/format';
-import type { EvidencePack } from '../../types/brain';
+import type { EvidencePack } from '../../types/api';
 import { MarketContextTiles } from '../market/MarketContextTiles';
 import { Button } from '../ui/Button';
 import { ErrorNotice } from '../ui/ErrorNotice';
@@ -52,7 +53,10 @@ function PackBody({ pack: p }: { pack: EvidencePack }) {
         {p.unavailable.length > 0 && (
           <span data-testid="evidence-unavailable">
             Unavailable:{' '}
-            <strong className="font-medium text-ink">{p.unavailable.join(', ')}</strong>.
+            <strong className="font-medium text-ink">
+              {p.unavailable.map(unavailableLabel).join(', ')}
+            </strong>
+            .
           </span>
         )}
       </p>
@@ -94,23 +98,31 @@ function PackBody({ pack: p }: { pack: EvidencePack }) {
             <table className="min-w-full text-sm" aria-label="Quarterly results">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-ink-muted">
                 <tr>
-                  {['Quarter', 'Filed', 'Revenue', 'EBITDA', 'Net profit', 'EPS', 'Margin'].map(
-                    (h, i) => (
-                      <th
-                        key={h}
-                        scope="col"
-                        className={`px-3 py-2 font-medium ${i < 2 ? 'text-left' : 'text-right'}`}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    'Quarter ended',
+                    'Filed',
+                    'Revenue (₹ cr)',
+                    'EBITDA (₹ cr)',
+                    'Net profit (₹ cr)',
+                    'EPS (₹)',
+                    'Margin',
+                  ].map((h, i) => (
+                    <th
+                      key={h}
+                      scope="col"
+                      className={`px-3 py-2 font-medium ${i < 2 ? 'text-left' : 'text-right'}`}
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {p.quarters.map((q) => (
                   <tr key={q.period} className="border-t border-line/70">
-                    <td className="whitespace-nowrap px-3 py-1.5 text-ink">{q.period}</td>
+                    <td className="num whitespace-nowrap px-3 py-1.5 text-ink">
+                      {formatDate(q.period)}
+                    </td>
                     <td className="num whitespace-nowrap px-3 py-1.5 text-ink-muted">
                       {formatDate(q.filed_on)}
                     </td>
