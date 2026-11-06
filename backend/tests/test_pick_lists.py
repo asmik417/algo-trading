@@ -202,3 +202,12 @@ def test_broken_constant_name_index_is_repaired(tmp_path, monkeypatch):
     from sqlalchemy.exc import IntegrityError
     with pytest.raises(IntegrityError), old.begin() as conn:  # and the case-insensitive rule still holds
         conn.execute(text("INSERT INTO pick_lists VALUES (3, 'a', '[]', 'x', 'x')"))
+
+
+def test_new_list_name_is_reserved(client):
+    for name in ("New list…", "new list...", "  NEW LIST…  ", "New List..."):
+        r = client.post(API, json={"name": name, "symbols": ["TCS"]})
+        assert r.status_code == 400 and "reserved" in r.json()["detail"], name
+    pl = _create(client, name="New list for Q4")                       # only the exact menu label is reserved
+    assert client.put(f"{API}/{pl['id']}", json={"name": "new list…"}).status_code == 400  # rename too
+    assert _create(client, name="New list. . .")["name"] == "New list. . ."

@@ -13,6 +13,7 @@ from app.services.errors import BadInput, Conflict, NotFound
 from app.services.suggestion_service import clean_watchlist
 
 MAX_NAME = 60
+RESERVED_NAME = "new list..."  # the UI's "New list…" menu entry (any case, ... or …)
 
 
 def to_schema(pl: PickList) -> dict:
@@ -26,6 +27,8 @@ def _clean_name(name: str | None) -> str:
         raise BadInput("List name must not be empty.")
     if len(name) > MAX_NAME:
         raise BadInput(f"List name must be at most {MAX_NAME} characters.")
+    if name.lower().replace("…", "...") == RESERVED_NAME:
+        raise BadInput('"New list…" is reserved for the menu; choose another name.')
     return name
 
 
