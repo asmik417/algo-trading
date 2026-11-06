@@ -6,6 +6,7 @@ import BacktestResultsPage from './pages/BacktestResultsPage';
 import HoldingsPage from './pages/HoldingsPage';
 import LoginPage from './pages/LoginPage';
 import LossesPage from './pages/LossesPage';
+import MarketPage from './pages/MarketPage';
 import StocksPage from './pages/StocksPage';
 import StrategiesPage from './pages/StrategiesPage';
 import TrackerPage from './pages/TrackerPage';
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
         children: [
           { path: '/', element: <Navigate to="/stocks" replace /> },
           { path: '/stocks', element: <StocksPage />, handle: { title: 'Stocks' } },
+          { path: '/market', element: <MarketPage />, handle: { title: 'Market brief' } },
           { path: '/tracker', element: <TrackerPage />, handle: { title: 'Tracker' } },
           { path: '/holdings', element: <HoldingsPage />, handle: { title: 'Holdings' } },
           { path: '/losses', element: <LossesPage />, handle: { title: 'Loss Analysis' } },

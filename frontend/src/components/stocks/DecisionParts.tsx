@@ -1,9 +1,11 @@
 // The decision-first parts of the stock dialog (contract section "Decision"): Our call, Why, Plan by verdict, Details.
+// Details' fourth row is the brain's evidence pack (contract "The brain").
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Check, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatDate, formatINR, formatNumber, formatPct } from '../../lib/format';
 import type { Decision, Direction, SuggestionDetail } from '../../types/api';
 import { Disclosure } from '../ui/Disclosure';
+import { EvidencePackPanel } from './EvidencePackPanel';
 import { FundamentalsGrid } from './FundamentalsGrid';
 import { IndicatorsStrip } from './IndicatorsStrip';
 import { BuyPlan, ExitPlan } from './PlanPanel';
@@ -157,7 +159,7 @@ export function PlanByVerdict({ detail }: { detail: SuggestionDetail }) {
   );
 }
 
-/** 5. Details: one accordion, every row collapsed — Rules, Chart & score, Fundamentals. */
+/** 5. Details: one accordion, every row collapsed — Rules, Chart & score, Fundamentals, Evidence pack. */
 export function DetailsAccordion({ detail }: { detail: SuggestionDetail }) {
   const { rules } = detail.verdict;
   // Anything the filters reported that is not a counted rule failure is an informational "skipped" note.
@@ -219,6 +221,9 @@ export function DetailsAccordion({ detail }: { detail: SuggestionDetail }) {
         </Disclosure>
         <Disclosure title="Fundamentals">
           <FundamentalsGrid data={detail.fundamentals} />
+        </Disclosure>
+        <Disclosure title="Evidence pack">
+          <EvidencePackPanel symbol={detail.symbol} day={detail.trading_day} />
         </Disclosure>
       </div>
     </section>

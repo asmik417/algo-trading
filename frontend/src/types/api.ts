@@ -1,5 +1,5 @@
 // Copied verbatim from docs/API_CONTRACT.md: the Auth, Watchlist runs, Pick lists, Decision and Backtests snippets and
-// the TypeScript types section. Do not edit by hand.
+// the TypeScript types section. Do not edit by hand. (The brain's snippets live in ./brain.ts.)
 
 export interface LoginBody { username: string; password: string; }
 export interface Me { username: string; }

@@ -1,5 +1,6 @@
 // The stock dialog, decision first (contract section "Decision", Dialog layout):
-// 1 header with the verdict badge and headline · 2 Our call · 3 Why · 4 Plan by verdict · 5 Details (collapsed) · 6 disclaimer.
+// 1 header with the verdict badge and headline · 2 Our call, then the Analyst view (contract "The brain") · 3 Why ·
+// 4 Plan by verdict · 5 Details (collapsed) · 6 disclaimer.
 // "suggested" opens a saved suggestion; "analyze" scores any NSE stock on demand under the active strategy.
 import { Loader2 } from 'lucide-react';
 import { useAnalysis } from '../../hooks/useStocks';
@@ -10,6 +11,7 @@ import { useActiveProfile } from '../../store/activeProfile';
 import { Dialog } from '../ui/Dialog';
 import { ErrorNotice } from '../ui/ErrorNotice';
 import { Skeleton } from '../ui/Skeleton';
+import { AnalystViewBlock } from './AnalystViewBlock';
 import { DetailsAccordion, OurCall, PlanByVerdict, WhyList } from './DecisionParts';
 import { TrackButton } from './TrackButton';
 import { OverallBadge } from './VerdictParts';
@@ -117,6 +119,13 @@ export function StockDialog({
           ) : (
             <>
               <OurCall decision={detail.decision} />
+              <AnalystViewBlock
+                key={`${detail.symbol}:${detail.trading_day}:${profile?.id ?? ''}`}
+                symbol={detail.symbol}
+                day={detail.trading_day}
+                profileId={profile?.id}
+                embedded={detail.analyst}
+              />
               <WhyList decision={detail.decision} />
               <PlanByVerdict detail={detail} />
               <DetailsAccordion detail={detail} />

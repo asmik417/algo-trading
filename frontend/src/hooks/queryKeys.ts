@@ -24,5 +24,15 @@ export const keys = {
   stats: (profileId: number | null | undefined) => ['stats', profileId] as const,
   reviewTags: ['review-tags'] as const,
   losses: (profileId: number | null | undefined) => ['losses', profileId] as const,
+  marketBrief: (day: string | null | undefined) => ['market-brief', day ?? 'latest'] as const,
+  marketBriefs: (limit: number) => ['market-briefs', limit] as const,
+  evidence: (symbol: string | null | undefined, day: string | null | undefined) =>
+    ['evidence', symbol, day] as const,
+  /** Views are cached per (symbol, day, strategy), so the strategy is part of the key. */
+  analystView: (
+    symbol: string | null | undefined,
+    day: string | null | undefined,
+    profileId: number | null | undefined,
+  ) => ['analyst-view', symbol, day, profileId] as const,
   lossSummary: (profileId: number | null | undefined) => ['loss-summary', profileId] as const,
 };
