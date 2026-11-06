@@ -41,6 +41,7 @@ DEFAULTS: dict = {
     "max_3m_runup_pct": 50.0,
     "max_dist_from_52w_high_pct": 25.0,
     "min_volume_ratio": 1.2,
+    "min_nifty_vs_ema50_pct": 0.0,   # market filter; 0 = off
     # Pillar weights (sum to 100)
     "w_earnings_acceleration": 25,
     "w_fundamental_quality": 20,
@@ -93,6 +94,9 @@ PARAM_SPEC: list[dict] = [
             {"key": "require_above_200ema", "label": "Price must be above 200-day EMA", "type": "bool"},
             {"key": "max_3m_runup_pct", "label": "Maximum 3-month run-up (%)", "type": "number", "min": 0.0, "max": 500.0, "step": 5.0,
              "help": "Skip stocks that already rallied more than this — the aim is to find setups early."},
+            {"key": "min_nifty_vs_ema50_pct", "label": "Market filter: max Nifty 50 fall below its 50-day EMA (%)",
+             "type": "number", "min": 0.0, "max": 20.0, "step": 0.5,
+             "help": "No new picks on a day Nifty 50 closes more than this % below its 50-day EMA; 0 = off"},
             {"key": "max_dist_from_52w_high_pct", "label": "Maximum distance below 52-week high (%)", "type": "number",
              "min": 0.0, "max": 100.0, "step": 5.0,
              "help": "Stock must be within this % below its 52-week high; 0 = ignore"},

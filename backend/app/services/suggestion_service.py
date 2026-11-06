@@ -112,6 +112,7 @@ class Scored:
     failures: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)   # filters not applied because the metric is missing
     rules_checked: int = 0                              # filters actually evaluated (pass or fail); verdict.rules.total
+    market: dict = field(default_factory=dict)          # whole-market facts for the day (market_data.market_context)
 
     @property
     def has_fundamentals(self) -> bool:
@@ -214,6 +215,13 @@ def filter_failures(s: Scored, params: ScreenParams) -> tuple[list[str], list[st
     else:
         rule(f"Volume {vol:.2f}x 20-day average, below min {params.min_volume_ratio:.2f}x"
              if vol < params.min_volume_ratio else None)
+    if params.min_nifty_vs_ema50_pct > 0:
+        nifty = s.market.get("nifty_vs_ema50_pct")
+        if nifty is None:
+            skip("Nifty 50 trend")
+        else:
+            rule(f"Nifty 50 is {-nifty:.1f}% below its 50-day EMA, more than max {params.min_nifty_vs_ema50_pct:g}%: "
+                 "no new picks today" if nifty < -params.min_nifty_vs_ema50_pct else None)
     if c.total_score is not None:
         rule(f"Score {c.total_score:.0f} below min {params.min_score:.0f}" if c.total_score < params.min_score else None)
     rule(f"Signal is {SIGNALS['WEAK']}" if c.signal == SIGNALS["WEAK"] else None)
@@ -235,12 +243,12 @@ def corporate_action_date(history: pd.DataFrame) -> str | None:
 
 
 def score_symbol(symbol: str, history: pd.DataFrame, bundle: dict, params: ScreenParams,
-                 require_fundamentals: bool = True) -> Scored:
+                 require_fundamentals: bool = True, market: dict | None = None) -> Scored:
     """Score + hard filters for one stock. `require_fundamentals=False` (backtest technical_only mode) drops the
     has-fundamentals rule; everything else is the same pipeline as a full run."""
     candidate = evaluate(symbol, history, bundle.get("info") or {}, bundle.get("quarterly") or [],
                          bundle.get("cashflow") or [], weights=params.weights)
-    s = Scored(candidate=candidate, bundle=bundle, indicators=analysis_service.indicators(history))
+    s = Scored(candidate=candidate, bundle=bundle, indicators=analysis_service.indicators(history), market=market or {})
     s.failures, s.skipped, s.rules_checked = filter_failures(s, params)
     # Two more rules, always evaluated and listed first when they fail.
     gap_day = corporate_action_date(history)
@@ -375,7 +383,8 @@ def execute_run(run_id: int, force_refetch: bool = False) -> None:
             shortlist = prefilter(trading_day, histories, params)
 
             run_registry.update(run_id, phase="scoring", done=0, total=len(shortlist))
-            scored = _score_shortlist(run_id, shortlist, histories, trading_day, params, force_refetch)
+            market = market_data.market_context(trading_day) if params.min_nifty_vs_ema50_pct > 0 else {}
+            scored = _score_shortlist(run_id, shortlist, histories, trading_day, params, force_refetch, market)
             run.scored_size = len(scored)
             db.commit()
 
@@ -411,10 +420,10 @@ def execute_run(run_id: int, force_refetch: bool = False) -> None:
             run_registry.finish(run_id, "failed")
 
 
-def _score_shortlist(run_id, shortlist, histories, trading_day, params, force_refetch) -> list[Scored]:
+def _score_shortlist(run_id, shortlist, histories, trading_day, params, force_refetch, market=None) -> list[Scored]:
     def work(sym: str) -> Scored | None:
         bundle = load_fundamentals(trading_day, sym, force_refetch)
-        s = score_symbol(sym, histories[sym], bundle, params)
+        s = score_symbol(sym, histories[sym], bundle, params, market=market)
         # ETFs / funds trade in the EQ series but have no fundamentals; this algo is about fundamentals.
         if not s.has_fundamentals or s.candidate.total_score is None:
             return None
@@ -456,7 +465,8 @@ def analyze_one(symbol: str, params: ScreenParams, trading_day: str | None,
     hist = market_data.history(sym)
     if not trading_day or hist.empty or hist.index[-1] != pd.Timestamp(trading_day):
         raise NotFound(f"{sym} is not in the NSE universe for {trading_day}.")
-    s = score_symbol(sym, hist, load_fundamentals(trading_day, sym, force_refetch), params)
+    market = market_data.market_context(trading_day) if params.min_nifty_vs_ema50_pct > 0 else {}
+    s = score_symbol(sym, hist, load_fundamentals(trading_day, sym, force_refetch), params, market=market)
     if s.candidate.total_score is None:
         raise BadInput(f"Not enough data to score {sym}.")
     plan = plan_service.build_plan(hist, s.candidate.stage, params, trading_day)

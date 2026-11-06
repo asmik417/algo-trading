@@ -237,6 +237,18 @@ def nifty_closes_range(start: date, end: date) -> pd.Series | None:
         return None
 
 
+def nifty_vs_ema50_pct(day: str | date) -> float | None:
+    """Nifty 50 close vs its 50-day EMA on `day`, in % (None if Nifty data is unavailable)."""
+    from app.engine.scoring.market_regime import nifty_vs_ema50_pct as compute
+
+    return compute(_nifty_closes(), day)
+
+
+def market_context(day: str | date) -> dict:
+    """Whole-market facts the hard filters need for one trading day."""
+    return {"nifty_vs_ema50_pct": nifty_vs_ema50_pct(day)}
+
+
 def nifty_change_pct(from_date: str | date, to_date: str | date | None = None) -> float | None:
     """NIFTY 50 % change from the close on/before `from_date` to the close on/before `to_date`
     (default: latest). None on failure or when either end is unavailable."""

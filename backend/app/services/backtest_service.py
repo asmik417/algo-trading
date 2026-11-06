@@ -19,6 +19,7 @@ from app.core.redaction import redact
 from app.db.session import SessionLocal
 from app.engine.backtest import calendar, fundamentals, patterns, replay, simulate, stats
 from app.engine.params import ScreenParams
+from app.engine.scoring import market_regime
 from app.models import Backtest, BacktestTrade
 from app.services import market_data, plan_service, profile_service, review_service, suggestion_service
 from app.services.errors import BadInput, Conflict, NotFound
@@ -169,20 +170,24 @@ def execute(bt_id: int) -> None:
                 return fundamentals.point_in_time_bundle(bundles.get(sym, {}), day, float(cut["Close"].iloc[-1]),
                                                          today_close.get(sym), cut)
 
-            # 3. scanning: the full-run pipeline on histories cut at each scan date.
-            score = partial(suggestion_service.score_symbol, require_fundamentals=require_fundamentals)
+            # 3. scanning: the full-run pipeline on histories cut at each scan date. Nifty (for the market filter and
+            #    the trade comparison) is fetched with the same warm-up as prices; each scan only sees Nifty up to it.
+            nifty = market_data.nifty_closes_range(start - timedelta(days=HISTORY_MARGIN_DAYS), end)
+            if nifty is None:
+                caveats.append("Nifty 50 history was unavailable, so trade-vs-Nifty figures are empty"
+                               + (" and the market filter was skipped." if params.min_nifty_vs_ema50_pct > 0 else "."))
             all_picks: list[replay.Pick] = []
             for i, scan in enumerate(scans, start=1):
                 _set_progress(bt_id, phase="scanning", done=i - 1, total=len(scans), current_symbol=scan.date().isoformat())
+                market = ({"nifty_vs_ema50_pct": market_regime.nifty_vs_ema50_pct(nifty, scan)}
+                          if params.min_nifty_vs_ema50_pct > 0 else {})
+                score = partial(suggestion_service.score_symbol, require_fundamentals=require_fundamentals, market=market)
                 all_picks += replay.picks(scan, histories, shortlists[scan], params, score=score,
                                           plan=plan_service.build_plan, bundle_for=bundle_for,
                                           max_suggestions=int(params.max_suggestions))
 
             # 4. simulating: walk every pick forward with the Tracker's rules, then tag the losers.
             _set_progress(bt_id, phase="simulating", done=len(scans), total=len(scans), current_symbol=None)
-            nifty = market_data.nifty_closes_range(effective_start - timedelta(days=10), end)
-            if nifty is None:
-                caveats.append("Nifty 50 history was unavailable, so trade-vs-Nifty figures are empty.")
             sim = simulate.simulate_all(all_picks, histories, end, bt.entry_rule, bt.cost_pct, bt.capital_per_trade, nifty)
             patterns.tag_losses(sim.trades, histories)
             if sim.dropped_corporate_action:
