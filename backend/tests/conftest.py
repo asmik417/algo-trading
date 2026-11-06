@@ -33,6 +33,7 @@ def no_network_fundamentals(tmp_path, monkeypatch):
     from app.services import market_data
 
     monkeypatch.setattr(market_data, "_nifty_closes", lambda: None)
+    monkeypatch.setattr(market_data, "nifty_closes_range", lambda start, end: None)
 
 
 @pytest.fixture()

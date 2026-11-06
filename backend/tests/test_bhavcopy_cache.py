@@ -98,3 +98,34 @@ def test_panel_has_no_duplicate_symbol_days(fake_nse, monkeypatch):
     panel = nse_universe.build_market_panel(lookback_days=9)
     assert not panel.duplicated(["symbol", "date"]).any()
     assert pd.Series(panel["date"]).is_monotonic_increasing
+
+
+def test_panel_for_any_range_downloads_once_and_caches(fake_nse):
+    responses, calls, _ = fake_nse
+    start, end = date(2024, 6, 10), date(2024, 6, 16)          # Mon..Sun, before NSE's July 2024 format change
+    for d in (date(2024, 6, 10), date(2024, 6, 11), date(2024, 6, 12), date(2024, 6, 13), date(2024, 6, 14)):
+        responses[d] = _csv(d)                                   # weekdays trade; the weekend gets the HTML page
+    ticks = []
+    panel = nse_universe.build_market_panel_range(start, end, progress=lambda done, total: ticks.append((done, total)))
+    assert sorted(panel["date"].dt.date.unique()) == [date(2024, 6, d) for d in (10, 11, 12, 13, 14)]
+    assert ticks[-1] == (7, 7) and len(ticks) == 7
+    assert len(calls) == 7
+    again = nse_universe.build_market_panel_range(start, end)
+    assert len(calls) == 7 and again.equals(panel)               # everything (incl. the weekend) came from disk
+
+
+def test_range_never_requests_future_days(fake_nse):
+    _, calls, _ = fake_nse
+    nse_universe.build_market_panel_range(date.today() - timedelta(days=1), date.today() + timedelta(days=30))
+    assert max(calls) <= date.today()
+    assert nse_universe.build_market_panel_range(date(2024, 1, 2), date(2024, 1, 1)).empty  # empty range
+
+
+def test_live_panel_is_the_range_panel(fake_nse):
+    responses, _, _ = fake_nse
+    for i in range(5):
+        d = date.today() - timedelta(days=i)
+        responses[d] = _csv(d)
+    live = nse_universe.build_market_panel(lookback_days=4)
+    rng = nse_universe.build_market_panel_range(date.today() - timedelta(days=4), date.today())
+    assert live.equals(rng) and len(live) == 5
