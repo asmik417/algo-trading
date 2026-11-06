@@ -8,7 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.jobs import daily_update
+from app.jobs import daily_update, nightly_brain
 
 log = get_logger(__name__)
 
@@ -27,6 +27,15 @@ def _run_job() -> None:
             log.info("Scheduled daily update skipped: already running")
     except Exception:
         log.exception("Scheduled daily update failed")
+    # Right after the daily update (docs/API_CONTRACT.md -> The brain): pull sources for the same day.
+    try:
+        job = nightly_brain.start_job()
+        if job is None:
+            log.info("Scheduled nightly brain skipped: already running")
+        else:
+            nightly_brain.run(job.id)
+    except Exception:
+        log.exception("Scheduled nightly brain failed")
 
 
 def start() -> None:

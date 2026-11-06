@@ -1,0 +1,51 @@
+{
+ "comNameList": [],
+ "data": [
+  {
+   "broadcastDt": "05-Nov-2026 16:31:56",
+   "comName": "WeWork India Management Limited",
+   "compBroadcastDate": null,
+   "disclosureFromDate": null,
+   "disclosureToDate": null,
+   "nbfcNonPromoShare": "0",
+   "nbfcPromoShare": "0",
+   "noOfPledgeShare": "1545.683",
+   "noOfSecPledgeShare": "1655.156",
+   "numSharesPledged": "25061040",
+   "percPromoterHolding": "    48.20",
+   "percPromoterShares": "    34.97",
+   "percSharesPledged": "18.05",
+   "percTotShares": "    16.85",
+   "sharesCollateral": "0",
+   "shp": "30-Sep-2026",
+   "totDematShares": "138870212",
+   "totIssuedShares": "138870213",
+   "totPromoterHolding": "66932083",
+   "totPromoterShares": "23403489",
+   "totPublicHolding": "71938130"
+  },
+  {
+   "broadcastDt": "05-Nov-2026 16:31:56",
+   "comName": "WeWork India Management Limited",
+   "compBroadcastDate": null,
+   "disclosureFromDate": null,
+   "disclosureToDate": null,
+   "nbfcNonPromoShare": "0",
+   "nbfcPromoShare": "0",
+   "noOfPledgeShare": "1545.683",
+   "noOfSecPledgeShare": "1655.156",
+   "numSharesPledged": "25061040",
+   "percPromoterHolding": "    48.20",
+   "percPromoterShares": "    34.97",
+   "percSharesPledged": "18.05",
+   "percTotShares": "    16.85",
+   "sharesCollateral": "0",
+   "shp": "30-Sep-2026",
+   "totDematShares": "138870212",
+   "totIssuedShares": "138870213",
+   "totPromoterHolding": "66932083",
+   "totPromoterShares": "23403489",
+   "totPublicHolding": "71938130"
+  }
+ ]
+}

@@ -7,10 +7,21 @@ from app.models.pick_list import PickList
 from app.models.position import Position, PositionEvent, PositionMark
 from app.models.profile import Profile
 from app.models.review import LossReview
+from app.models.sources import (Announcement, BrainJob, Deal, InsiderTrade, MarketContextRow, NewsItem,
+                                QuarterlyResult, Shareholding, SourcePull)
 from app.models.suggestion import Suggestion, SuggestionRun
 
 __all__ = [
+    "Announcement",
     "AppMeta",
+    "BrainJob",
+    "Deal",
+    "InsiderTrade",
+    "MarketContextRow",
+    "NewsItem",
+    "QuarterlyResult",
+    "Shareholding",
+    "SourcePull",
     "Backtest",
     "BacktestTrade",
     "LossReview",

@@ -46,6 +46,7 @@ MODELS = {
     "LossSummary": review.LossSummary,
     "JobStatus": job.JobStatus,
     "Health": health.Health,
+    "SourceStatus": job.SourceStatus,
     "Me": auth.Me,
     "WatchlistHit": suggestion.WatchlistHit,
     "Verdict": suggestion.Verdict,
@@ -148,13 +149,18 @@ def test_enumerations_pinned_to_engine():
     assert _enumeration("market_cap_bucket") == list(CAP_BUCKETS)
 
 
+# Fields the contract's prose adds but its TS block does not list yet (see "Proposed changes"); remove once fixed.
+PENDING_EXTRA = {"JobStatus": {"brain"}}
+
+
 @pytest.mark.parametrize("name", sorted(MODELS))
 def test_schema_fields_match_contract(name):
     ts_fields, ts_optional, ts_nullable = TS[name]
     model = MODELS[name]
     model_fields = model.model_fields
-    assert set(model_fields) == set(ts_fields), (
-        f"{name}: missing {set(ts_fields) - set(model_fields)}, extra {set(model_fields) - set(ts_fields)}"
+    extra = set(model_fields) - set(ts_fields) - PENDING_EXTRA.get(name, set())
+    assert set(ts_fields) <= set(model_fields) and not extra, (
+        f"{name}: missing {set(ts_fields) - set(model_fields)}, extra {extra}"
     )
     for key in ts_optional:
         assert not model_fields[key].is_required(), f"{name}.{key} is optional in the contract"

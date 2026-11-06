@@ -564,3 +564,19 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
   - **Other behaviour to confirm:** watchlist runs do not take the one-active-run-per-profile slot (a watchlist run starts even while a full run is going; two watchlist runs can run together). `GET /runs/{id}/results` on a full run → 400. While a watchlist run is in progress, `results` lists only symbols already analysed, still in requested order. Run counts for a watchlist run: `universe_size` = distinct symbols requested, `scored_size` = analysed, `passed_size` = passed the filters. `rank` is null for watchlist items.
   - ~~(frontend, live check 2026-11-05) unknown-symbol row mismatch~~ **Withdrawn by frontend 2026-11-05:** the accepted `WatchlistMiss` (ten fields, `filters: null`) matches what the backend returns; the frontend now types results as `WatchlistHit | WatchlistMiss` and its mocks follow it.
   - **DATA_MODEL.md:** `suggestion_runs` gained `kind` (default `full`), `symbols_json`, and `item_errors_json` (`{symbol: error}`; an unknown symbol has no suggestion row to hold its error). Added in place to the live DB; existing runs kept as `full`.
+- 2026-11-06 (backend), **the brain, part 1 (sources)**:
+  - **`JobStatus` TS lacks `brain`.** The prose under "Sources and the nightly job" adds it, but the main TS block's `JobStatus` (line ~526) does not. Proposal: add `brain: BrainStatus | null;` and `export interface BrainStatus { running: boolean; last_day: string | null; sources: SourceStatus[]; packs_built: number; views_built: number; views_failed: number; }`. `brain` is `null` until the first nightly-brain run. `tests/test_contract_schemas.py` carries a `PENDING_EXTRA` exception for it.
+  - **Request/response types for `POST /jobs/nightly-brain`.** Proposal: `export interface NightlyBrainBody { day?: string }` and `export interface NightlyBrainStarted { job_id: number }`. A bad `day` gets 400, like other date bodies.
+  - **DATA_MODEL additions, as implemented:**
+    - `news_items` (symbol nullable for market-wide feeds, date, title, source, url).
+    - `brain_jobs` (id, day, status queued/running/done/failed, summary_json, error, started/finished/created_at). This is what `job_id` refers to.
+    - `market_context` is stored long, one row per `(day, metric)`, for example `vix`, `fii_net_cr`, `index:NIFTY 50:pct_1d` or `global:sp500:change_1w_pct`. `MarketContext` is assembled from it in part 2.
+    - Every source row has `uid` (unique), `pulled_day` and `data_json`; inserts use `ON CONFLICT DO NOTHING`.
+    - `source_pulls` also stores `inserted`.
+  - **Source limits found while building (no contract change, but the guide should know):**
+    - **Insider (PIT) is blocked.** NSE's `corporates-pit` returns 0 rows to any non-browser client. The source is recorded as `failed` every night, with that reason, and never `empty`. `DealRow` `insider_buy`/`insider_sell` will be absent until a browser-session fetch is approved.
+    - **Deals and FII/DII are latest-session only.** NSE serves only today's snapshot, so a back-dated pull fails with a reason rather than storing the wrong day.
+    - **Index levels are live.** A pull before 15:30 IST marks indices as intraday (status ok, with a warning in `error`) and stores no index rows.
+    - **`Ownership.fii_pct`/`dii_pct` are not in NSE's shareholding master**, which gives only promoter and public. They stay `null` (unavailable) unless the guide wants the per-filing XBRL parsed.
+    - **Moneycontrol RSS has been frozen since April 2024.** News uses the ET Markets feeds plus Google News per followed company.
+    - **Quarterly results** come from NSE "Integrated Filing – Financials" XBRL, with `filed_on` taken from the broadcast date. EBITDA = PBT + finance costs + depreciation − other income. Banks report revenue as interest earned.

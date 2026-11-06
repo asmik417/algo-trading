@@ -1,0 +1,72 @@
+{
+ "as_on_date": "05-Nov-2026",
+ "BULK_DEALS": "93",
+ "SHORT_DEALS": "142",
+ "BLOCK_DEALS": "2",
+ "BULK_DEALS_DATA": [
+  {
+   "buySell": "BUY",
+   "clientName": "MONEKA ANIL PODDAR",
+   "date": "05-Nov-2026",
+   "name": "Advent Hotels Internati L",
+   "qty": "295726",
+   "remarks": "-",
+   "symbol": "ADVENTHTL",
+   "watp": "118.4"
+  },
+  {
+   "buySell": "BUY",
+   "clientName": "RAVI AMIT JALAN",
+   "date": "05-Nov-2026",
+   "name": "Amir Chand Jag Kum (E) L",
+   "qty": "850000",
+   "remarks": "-",
+   "symbol": "AEROPLANE",
+   "watp": "242.38"
+  },
+  {
+   "buySell": "BUY",
+   "clientName": "ARTHKUMBH VENTURES LLP",
+   "date": "05-Nov-2026",
+   "name": "Agi Infra Limited",
+   "qty": "1000000",
+   "remarks": "-",
+   "symbol": "AGIIL",
+   "watp": "273"
+  }
+ ],
+ "BLOCK_DEALS_DATA": [
+  {
+   "buySell": "BUY",
+   "clientName": "CELLO PENS AND STATIONERY PRIVATE LIMITED",
+   "date": "04-Nov-2026",
+   "name": "Ajmera Realty & Inf I Ltd",
+   "qty": "2500000",
+   "remarks": null,
+   "symbol": "AJMERA",
+   "watp": "141"
+  },
+  {
+   "buySell": "SELL",
+   "clientName": "VALUEQUEST INVESTMENT ADVISORS PRIVATE LIMITED",
+   "date": "04-Nov-2026",
+   "name": "Ajmera Realty & Inf I Ltd",
+   "qty": "2500000",
+   "remarks": null,
+   "symbol": "AJMERA",
+   "watp": "141"
+  }
+ ],
+ "SHORT_DEALS_DATA": [
+  {
+   "buySell": null,
+   "clientName": null,
+   "date": "05-Nov-2026",
+   "name": "ADANI ENERGY SOLUTION LTD",
+   "qty": "25",
+   "remarks": null,
+   "symbol": "ADANIENSOL",
+   "watp": null
+  }
+ ]
+}

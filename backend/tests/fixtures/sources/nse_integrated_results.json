@@ -1,0 +1,51 @@
+{
+ "data": [
+  {
+   "attFileSize": "0 Bytes",
+   "audited": "Audited",
+   "broadcast_Date": "05-Nov-2026 23:54:22",
+   "cmName": "MphasiS Limited",
+   "consolidated": "Consolidated",
+   "creation_Date": "05-Nov-2026 23:54:45",
+   "diff": "00:00:23",
+   "ixbrl": "https://nsearchives.nseindia.com/corporate/ixbrl/INTEGRATED_FILING_INDAS_210973_05112026235445_iXBRL_WEB.html",
+   "ixbrlFileSize": "86.69 KB",
+   "pdf_attach": "https://nsearchives.nseindia.com/corporate/null",
+   "qe_Date": "30-SEP-2026",
+   "revised_Date": null,
+   "revision_Remark": null,
+   "seq_Id": "210973",
+   "smName": "MphasiS Limited",
+   "symbol": "MPHASIS",
+   "type": "Integrated Filing- Financials",
+   "type_Sub": "Original",
+   "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1754415_05112026115445_WEB.xml",
+   "xbrlFileSize": "99.23 KB"
+  },
+  {
+   "attFileSize": "0 Bytes",
+   "audited": "Audited",
+   "broadcast_Date": "05-Nov-2026 23:54:11",
+   "cmName": "MphasiS Limited",
+   "consolidated": "Standalone",
+   "creation_Date": "05-Nov-2026 23:54:29",
+   "diff": "00:00:18",
+   "ixbrl": "https://nsearchives.nseindia.com/corporate/ixbrl/INTEGRATED_FILING_INDAS_210972_05112026235429_iXBRL_WEB.html",
+   "ixbrlFileSize": "558.74 KB",
+   "pdf_attach": "https://nsearchives.nseindia.com/corporate/null",
+   "qe_Date": "30-SEP-2026",
+   "revised_Date": null,
+   "revision_Remark": null,
+   "seq_Id": "210972",
+   "smName": "MphasiS Limited",
+   "symbol": "MPHASIS",
+   "type": "Integrated Filing- Financials",
+   "type_Sub": "Original",
+   "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1754414_05112026115428_WEB.xml",
+   "xbrlFileSize": "1.69 MB"
+  }
+ ],
+ "page": 0,
+ "size": 500,
+ "totalCount": 2
+}

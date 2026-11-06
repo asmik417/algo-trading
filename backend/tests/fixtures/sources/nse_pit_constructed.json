@@ -1,0 +1,10 @@
+{"_note": "CONSTRUCTED, not recorded: NSE's corporates-pit endpoint returned no rows to scripted clients when these fixtures were made. Field names follow NSE's PIT disclosure format.",
+ "acqNameList": [],
+ "data": [
+  {"symbol": "MPHASIS", "company": "MphasiS Limited", "acqName": "Example Director", "personCategory": "Director", "secType": "Equity Shares",
+   "secAcq": "1,200", "secVal": "3,456,000", "tdpTransactionType": "Buy", "acqMode": "Market Purchase",
+   "acqfromDt": "04-Nov-2026", "acqtoDt": "04-Nov-2026", "intimDt": "05-Nov-2026", "date": "05-Nov-2026 18:02"},
+  {"symbol": "EXCELINDUS", "company": "Excel Industries Limited", "acqName": "Example Promoter", "personCategory": "Promoter Group", "secType": "Equity Shares",
+   "secAcq": "5000", "secVal": "-", "tdpTransactionType": "Sell", "acqMode": "Market Sale",
+   "acqfromDt": "30-Oct-2026", "acqtoDt": "30-Oct-2026", "intimDt": "31-Oct-2026", "date": "31-Oct-2026 10:15"}
+ ]}
