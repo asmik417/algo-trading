@@ -18,6 +18,7 @@ class SuggestionRun(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False, default="full", server_default="full")  # full | watchlist
     symbols_json: Mapped[str | None] = mapped_column(Text)       # watchlist: requested symbols, in order; null for full
     item_errors_json: Mapped[str | None] = mapped_column(Text)   # watchlist: {symbol: why it could not be analysed}
+    list_id: Mapped[int | None] = mapped_column(ForeignKey("pick_lists.id", ondelete="SET NULL"))  # watchlist from a list
     universe_size: Mapped[int | None] = mapped_column(Integer)
     scored_size: Mapped[int | None] = mapped_column(Integer)
     passed_size: Mapped[int | None] = mapped_column(Integer)
@@ -28,6 +29,7 @@ class SuggestionRun(Base):
     created_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_iso)
 
     profile = relationship("Profile", back_populates="runs")
+    pick_list = relationship("PickList")  # read-only lookup for list_name; the DB nulls list_id on list delete
     suggestions = relationship("Suggestion", back_populates="run", cascade="all, delete-orphan", passive_deletes=True)
 
 

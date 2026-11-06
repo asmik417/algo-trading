@@ -9,7 +9,7 @@ import pytest
 from app.engine.params import CAP_BUCKETS
 from app.engine.scoring import signal as engine_signal
 from app.engine.scoring import stage as engine_stage
-from app.schemas import auth, health, job, position, profile, review, run, stock, suggestion
+from app.schemas import auth, health, job, pick_list, position, profile, review, run, stock, suggestion
 
 CONTRACT = Path(__file__).resolve().parents[2] / "docs" / "API_CONTRACT.md"
 
@@ -49,6 +49,7 @@ MODELS = {
     "Me": auth.Me,
     "WatchlistHit": suggestion.WatchlistHit,
     "Verdict": suggestion.Verdict,
+    "PickList": pick_list.PickList,
     "WatchlistMiss": suggestion.WatchlistMiss,
     "WatchlistResults": suggestion.WatchlistResults,
 }
@@ -66,6 +67,8 @@ REQUEST_MODELS = {
     "ReviewBody": review.ReviewBody,
     "LoginBody": auth.LoginBody,
     "WatchlistRunBody": run.WatchlistRunBody,
+    "CreatePickListBody": pick_list.CreatePickListBody,
+    "UpdatePickListBody": pick_list.UpdatePickListBody,
 }
 
 
@@ -75,7 +78,8 @@ def _ts_interfaces() -> dict[str, tuple[list[str], set[str], set[str]]]:
     # The contract has several ```ts blocks (Auth near the top, the main block near the end); read them all.
     block = "\n".join(part.split("```", 1)[0] for part in text.split("```ts")[1:])
     raw: dict[str, tuple[str | None, str]] = {}
-    for m in re.finditer(r"export interface (\w+)(?: extends (\w+))? \{(.*?)\}\s*$", block, re.M):
+    # A trailing `// comment` after the closing brace is allowed ("{ ... }   // exactly one").
+    for m in re.finditer(r"export interface (\w+)(?: extends (\w+))? \{(.*?)\}\s*(?://.*)?$", block, re.M):
         raw[m.group(1)] = (m.group(2), m.group(3))
 
     def fields(name: str) -> tuple[list[str], set[str], set[str]]:

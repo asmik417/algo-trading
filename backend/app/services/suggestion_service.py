@@ -503,11 +503,24 @@ def _spawn_watchlist(run_id: int) -> None:
     threading.Thread(target=execute_watchlist_run, args=(run_id,), name=f"watchlist-{run_id}", daemon=True).start()
 
 
-def start_watchlist_run(db: Session, profile_id: int, symbols: list[str]) -> SuggestionRun:
+def start_watchlist_run(db: Session, profile_id: int, symbols: list[str] | None = None,
+                        list_id: int | None = None) -> SuggestionRun:
+    """Exactly one of `symbols` / `list_id`. With a list, its current symbols are copied into the run, so the
+    run stays readable after the list is edited or deleted."""
     profile = profile_service.get_profile(db, profile_id)
-    cleaned = clean_watchlist(symbols)
+    if (symbols is None) == (list_id is None):
+        raise BadInput("Give either list_id or symbols, not both and not neither.")
+    if list_id is not None:
+        from app.models import PickList
+
+        pick_list = db.get(PickList, list_id)
+        if pick_list is None:
+            raise NotFound(f"Pick list {list_id} not found.")
+        cleaned = json.loads(pick_list.symbols_json)
+    else:
+        cleaned = clean_watchlist(symbols)
     run = SuggestionRun(profile_id=profile_id, status="queued", kind="watchlist", symbols_json=json.dumps(cleaned),
-                        params_json=profile.params_json)
+                        list_id=list_id, params_json=profile.params_json)
     db.add(run)
     db.commit()
     run_registry.start(run.id, profile_id, exclusive=False)
@@ -596,10 +609,13 @@ def watchlist_results(db: Session, run_id: int) -> dict:
     return {"run": run_to_schema(run), "items": items}
 
 
-def list_watchlist_runs(db: Session, profile_id: int, limit: int = 10) -> list[SuggestionRun]:
+def list_watchlist_runs(db: Session, profile_id: int, limit: int = 10, list_id: int | None = None) -> list[SuggestionRun]:
+    """Newest first; `list_id` narrows to runs of one pick list (a deleted or unknown list simply matches none)."""
     profile_service.get_profile(db, profile_id)
-    q = (select(SuggestionRun).where(SuggestionRun.profile_id == profile_id, SuggestionRun.kind == "watchlist")
-         .order_by(SuggestionRun.id.desc()).limit(max(1, min(limit, 100))))
+    q = select(SuggestionRun).where(SuggestionRun.profile_id == profile_id, SuggestionRun.kind == "watchlist")
+    if list_id is not None:
+        q = q.where(SuggestionRun.list_id == list_id)
+    q = q.order_by(SuggestionRun.id.desc()).limit(max(1, min(limit, 100)))
     return list(db.scalars(q))
 
 
@@ -617,7 +633,9 @@ def run_to_schema(run: SuggestionRun) -> dict:
                     "current_symbol": None}
     return {
         "id": run.id, "profile_id": run.profile_id, "status": run.status, "kind": run.kind or "full",
-        "symbols": json.loads(run.symbols_json) if run.symbols_json else None, "trading_day": run.trading_day,
+        "symbols": json.loads(run.symbols_json) if run.symbols_json else None,
+        "list_id": run.list_id, "list_name": run.pick_list.name if run.list_id and run.pick_list else None,  # name now
+        "trading_day": run.trading_day,
         "progress": progress, "universe_size": run.universe_size, "scored_size": run.scored_size,
         "passed_size": run.passed_size, "error": run.error, "started_at": run.started_at,
         "finished_at": run.finished_at, "created_at": run.created_at,

@@ -34,12 +34,15 @@ def list_runs(profile_id: int, limit: int = Query(10, ge=1, le=100), db: Session
 
 @router.post("/profiles/{profile_id}/watchlist-runs", response_model=Run, status_code=status.HTTP_202_ACCEPTED)
 def start_watchlist_run(profile_id: int, body: WatchlistRunBody, db: Session = Depends(get_db)):
-    return suggestion_service.run_to_schema(suggestion_service.start_watchlist_run(db, profile_id, body.symbols))
+    run = suggestion_service.start_watchlist_run(db, profile_id, symbols=body.symbols, list_id=body.list_id)
+    return suggestion_service.run_to_schema(run)
 
 
 @router.get("/profiles/{profile_id}/watchlist-runs", response_model=list[Run])
-def list_watchlist_runs(profile_id: int, limit: int = Query(10, ge=1, le=100), db: Session = Depends(get_db)):
-    return [suggestion_service.run_to_schema(r) for r in suggestion_service.list_watchlist_runs(db, profile_id, limit)]
+def list_watchlist_runs(profile_id: int, limit: int = Query(10, ge=1, le=100), list_id: int | None = None,
+                        db: Session = Depends(get_db)):
+    runs = suggestion_service.list_watchlist_runs(db, profile_id, limit, list_id)
+    return [suggestion_service.run_to_schema(r) for r in runs]
 
 
 @router.get("/runs/{run_id}/results", response_model=WatchlistResults)
