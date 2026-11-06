@@ -425,11 +425,12 @@ Every rules verdict produced by a run, watchlist run or Explore analysis, and ev
 
 ```ts
 export type VerdictSource = 'rules' | 'analyst';
-export interface LoggedVerdict { id: number; symbol: string; day: string; source: VerdictSource; profile_id: number; action: AnalystAction; direction: Direction; level: number | null; close: number; marks: { sessions: 20 | 40 | 60; date: string; close: number; change_pct: number; right: boolean }[]; }
+export interface LoggedVerdict { id: number; symbol: string; day: string; source: VerdictSource; profile_id: number; action: AnalystAction; direction: Direction; level: number | null; close: number; signal: string | null; marks: { sessions: 20 | 40 | 60; date: string; close: number; change_pct: number; right: boolean }[]; }
 export interface ScorecardRow { key: string; verdicts: number; marked: number; right: number; hit_rate_pct: number | null; avg_change_pct: number | null; }
 export interface Scorecard { profile_id: number; source: VerdictSource | 'both'; horizon: 20 | 40 | 60; total: ScorecardRow; by_source: ScorecardRow[]; by_action: ScorecardRow[]; by_signal: ScorecardRow[]; by_month: ScorecardRow[]; worst: LoggedVerdict[]; }
 ```
 A mark is `right` when the change matches the direction: up → change > 0, down → change < 0, sideways → |change| ≤ 5.
+`signal` on a logged verdict is the rules signal of the same symbol on the same day (from the suggestion row); an analyst verdict with no rules verdict that day has `null`, grouped as "No signal". `avg_change_pct` is the **change in the direction of the call**: up → change, down → −change; sideways verdicts are excluded from the average (null if none remain). The UI labels it "Avg edge".
 
 ### Frontend
 - **Stocks page**: a market-brief banner at the top (regime badge, stance line, "Read brief" → `/market`).
@@ -549,6 +550,8 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
 - 2026-11-06 (guide): **Decision** added (dialog leads with verdict, proof, expectation, review rule; details collapsed). `SuggestionDetail` and `WatchlistHit` gain `decision`. Types live in the Decision section's snippet.
 
 - 2026-11-06 (guide): **The brain** added: sources, evidence packs, analyst view, market brief, verdict log and scorecard. See `docs/BRAIN_PLAN.md`; types in that section's snippet.
+
+- 2026-11-06 (frontend → accepted): `LoggedVerdict.signal` added; `avg_change_pct` defined as change in the direction of the call, sideways excluded, labelled "Avg edge".
 
 ### Open
 - 2026-11-05 (frontend): **`WatchlistItem` error rows contradict their type.** The prose says an unknown or unscorable symbol comes back with `error` set "and score fields null", but `WatchlistItem extends SuggestionSummary`, where `id`, `score`, `price`, `entry_optimal`, `stop_loss`, `target`, `risk_reward`, `horizon_days`, `stage`, `signal`, `planned_exit_date` are all non-null, and `filters: FilterResult` is required. An unknown symbol also has no persisted suggestion, so there is no real `id`. Proposal: a discriminated union, so neither side has to guess:
