@@ -4,6 +4,7 @@ import {
   Activity,
   Briefcase,
   Database,
+  History,
   LogOut,
   SlidersHorizontal,
   TrendingDown,
@@ -25,6 +26,7 @@ const NAV: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/tracker', label: 'Tracker', icon: Briefcase },
   { to: '/holdings', label: 'Holdings', icon: Wallet },
   { to: '/losses', label: 'Loss Analysis', icon: TrendingDown },
+  { to: '/backtest', label: 'Backtest', icon: History },
   { to: '/strategies', label: 'Strategies', icon: SlidersHorizontal },
 ];
 

@@ -1,6 +1,8 @@
 import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { AuthGate } from './components/layout/AuthGate';
 import { ProtectedLayout } from './components/layout/ProtectedLayout';
+import BacktestPage from './pages/BacktestPage';
+import BacktestResultsPage from './pages/BacktestResultsPage';
 import HoldingsPage from './pages/HoldingsPage';
 import LoginPage from './pages/LoginPage';
 import LossesPage from './pages/LossesPage';
@@ -23,6 +25,12 @@ export const router = createBrowserRouter([
           { path: '/tracker', element: <TrackerPage />, handle: { title: 'Tracker' } },
           { path: '/holdings', element: <HoldingsPage />, handle: { title: 'Holdings' } },
           { path: '/losses', element: <LossesPage />, handle: { title: 'Loss Analysis' } },
+          { path: '/backtest', element: <BacktestPage />, handle: { title: 'Backtest' } },
+          {
+            path: '/backtest/:id',
+            element: <BacktestResultsPage />,
+            handle: { title: 'Backtest' },
+          },
           { path: '/strategies', element: <StrategiesPage />, handle: { title: 'Strategies' } },
           { path: '/account', element: <Navigate to="/strategies" replace /> },
           { path: '*', element: <Navigate to="/stocks" replace /> },

@@ -27,7 +27,7 @@ The flag is global (not per resource). Restart `npm run dev` after changing `.en
 One user. The backend reads `APP_USERNAME` / `APP_PASSWORD` from `backend/.env` and sets an HttpOnly `session` cookie (30 days). On load the app calls `GET /auth/me` behind a splash screen; signed-out visitors go to `/login`, and any 401 from the API signs you out and returns you there. **Sign out** is at the bottom of the sidebar.
 
 ## Pages
-`/login`, then `/stocks` (Algo Suggested, Explore and My Picks, all opening the same stock dialog), `/tracker`, `/holdings` (placeholder for future live trading; no API calls), `/losses`, `/strategies`.
+`/login`, then `/stocks` (Algo Suggested, Explore and My Picks, all opening the same stock dialog), `/tracker`, `/holdings` (placeholder for future live trading; no API calls), `/losses`, `/backtest` (new backtest, past backtests, Compare) with results at `/backtest/:id`, `/strategies`.
 
 **My Picks** (`/stocks?tab=picks&run=ID`): pick up to 50 symbols (type-ahead, chips, or paste a comma/space-separated list), press Analyse, and the watchlist run is polled like a full run. Results show a Verdict (Passes / Fails + first failure); unknown symbols get an "Error: …" row. "Previous analyses" reopens earlier lists for the active strategy. The active strategy is chosen from the "Active strategy" dropdown in the sidebar and kept in `localStorage`. `/tracker?position=ID` opens that position's drawer.
 
