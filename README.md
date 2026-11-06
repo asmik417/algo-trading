@@ -46,7 +46,7 @@ cd frontend && npm install && cd ..
 
 # every time (two terminals)
 cd backend && ../venv/bin/uvicorn app.main:app --reload --port 8000
-cd frontend && npm run dev               # http://localhost:5173
+cd frontend && npm run dev               # http://localhost:4820
 ```
 
 API docs: http://localhost:8000/docs. Tests: `cd backend && ../venv/bin/python -m pytest tests -q`.

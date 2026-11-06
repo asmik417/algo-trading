@@ -6,7 +6,7 @@ State of play: the scoring engine already lives in `app/engine/` and its 10 test
 
 ## Step 0 — dependencies and app skeleton (30 min)
 - Add to `requirements.txt`: `fastapi`, `uvicorn[standard]`, `sqlalchemy>=2.0`, `pydantic>=2`, `apscheduler>=3.10`, `httpx` (for tests). Install into `../venv`.
-- `app/core/config.py`: `Settings` with `API_PREFIX="/api/v1"`, `CORS_ORIGINS=["http://localhost:5173"]`, `DATABASE_URL` (from `app.engine.config`), `DAILY_JOB_HOUR=18`, `DAILY_JOB_MINUTE=30`, `TZ="Asia/Kolkata"`.
+- `app/core/config.py`: `Settings` with `API_PREFIX="/api/v1"`, `CORS_ORIGINS=["http://localhost:4820"]`, `DATABASE_URL` (from `app.engine.config`), `DAILY_JOB_HOUR=18`, `DAILY_JOB_MINUTE=30`, `TZ="Asia/Kolkata"`.
 - `app/db/base.py`, `app/db/session.py` (`get_db` dependency, `init_db()` calling `Base.metadata.create_all`).
 - `app/main.py`: `create_app()`; CORS; include `api/v1/router.py`; `init_db()` on startup; leave a scheduler start hook for Step 10; `GET /api/v1/health`.
 - Verify: `uvicorn app.main:app --port 8000` serves `/docs`.

@@ -5,7 +5,7 @@ React 18 + TypeScript (strict) + Vite + Tailwind, with TanStack Query for all se
 ## Install and run
 ```bash
 npm install
-npm run dev        # http://localhost:5173  (start the backend first: see ../CLAUDE.md)
+npm run dev        # http://localhost:4820  (start the backend first: see ../CLAUDE.md)
 npm run build      # type-check + production build
 npm run lint       # ESLint
 npm run format     # Prettier

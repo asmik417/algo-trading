@@ -32,7 +32,7 @@ The product spec is in `docs/PRODUCT.md`. Read it before anything else so you kn
 
 # frontend (from frontend/)
 npm install
-npm run dev          # http://localhost:5173, proxies /api -> http://localhost:8000
+npm run dev          # http://localhost:4820, proxies /api -> http://localhost:8000
 ```
 
 The Python venv lives at the repo root (`venv/`), shared with the old prototype. Python is 3.14.
