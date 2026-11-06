@@ -15,7 +15,7 @@ The product spec is in `docs/PRODUCT.md`. Read it before anything else so you kn
 1. **`docs/API_CONTRACT.md` is the single source of truth** for every request and response. Backend implements it exactly; frontend types mirror it exactly. If you need a change, do not improvise: add a note under "Proposed changes" at the bottom of that file and tell the user, who relays it to the guide.
 2. **Stay inside your folder.** Backend never edits `frontend/`, frontend never edits `backend/`. Neither edits `docs/` except the "Proposed changes" section.
 3. **The scoring engine (`backend/app/engine/`) is pure.** No database, no HTTP, no FastAPI imports inside it. Services call the engine; the engine never calls services.
-4. **The LLM only narrates.** Every number shown to the user comes from deterministic code. OpenAI is used to turn computed numbers into readable text, never to decide a score, price or date.
+4. **The LLM never computes.** Every number shown to the user comes from deterministic code. The model turns computed numbers into readable text, and in the Analyst view it may reason over an evidence pack and give an opinion with a confidence, shown separately from the rules verdict and scored on the scorecard. It never changes a score, level or date, and every number it writes must exist in the evidence it was given (audited automatically).
 5. **Paper money only.** There is no broker integration in this phase. Do not add order placement.
 6. **No silent fabrication.** If data for a stock is missing, show "unavailable" and skip that component; never fill in 0 or a made-up value.
 7. **Never delete files you did not create** this session. Move them to `_legacy/` instead.
