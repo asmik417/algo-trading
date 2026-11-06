@@ -138,6 +138,27 @@ Fixed reason tags (`GET /api/v1/reviews/tags`):
 | pnl, pnl_pct, r_multiple, days_held, mfe_pct, mae_pct, nifty_pct | float nullable | |
 | tags_json | text | loss-pattern tags |
 
+## source_pulls
+`(source, day)` unique: status ok / empty / failed, records, error, pulled_at.
+
+## announcements, deals, insider_trades, shareholding, market_context, quarterly_results
+One table per source, each row keyed by symbol (where applicable) and date, stored as fetched plus the normalised columns the API returns (see `EvidencePack`). `quarterly_results` carries `filed_on` so backtests can use point-in-time numbers. Rows are never overwritten; a re-pull inserts only new keys.
+
+## evidence_packs
+`(symbol, day)` unique; `pack_json` (`EvidencePack`), `created_at`.
+
+## analyst_views
+`(symbol, day, profile_id)` unique; `view_json` (`AnalystView`), `audited`, `model`, `created_at`.
+
+## market_briefs
+`day` unique; `brief_json` (`MarketBrief`), `created_at`.
+
+## verdict_log
+`(symbol, day, source, profile_id)` unique; action, direction, level, close, signal, created_at.
+
+## verdict_marks
+Primary key `(verdict_id, sessions)`: mark_date, close, change_pct, right.
+
 ## app_meta
 Key/value: `last_daily_update` (ISO timestamp), `last_trading_day`, `panel_built_for` (trading day the in-memory panel was built from).
 

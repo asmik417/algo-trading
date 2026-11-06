@@ -371,6 +371,75 @@ Frontend (`/backtest`, sidebar item **Backtest** between Loss Analysis and Strat
 
 ---
 
+## The brain (evidence packs, analyst view, market brief, scorecard)
+
+Plan and method: `docs/BRAIN_PLAN.md`. All numbers come from code; the model reasons over an evidence pack and gives an opinion that is shown separately from the rules verdict and scored later.
+
+### Sources and the nightly job
+`POST /jobs/nightly-brain` body `{ "day"?: "YYYY-MM-DD" }` → 202 `{ "job_id": n }`; runs pull sources → point-in-time results → market brief → evidence packs → analyst views → verdict log → scorecard marks, for the latest trading day unless `day` given. Idempotent per day. 409 if already running.
+`GET /jobs/status` gains `brain: { running: boolean; last_day: string | null; sources: SourceStatus[]; packs_built: number; views_built: number; views_failed: number } | null`.
+The scheduler runs it right after the daily update on weekdays.
+
+```ts
+export interface SourceStatus { source: string; day: string; status: 'ok' | 'empty' | 'failed'; records: number; error: string | null; }
+```
+
+### Evidence pack
+`GET /stocks/{symbol}/evidence?day=` → `EvidencePack` for that day (latest if omitted); 404 if none built. Built only for pick-list stocks, the day's algo suggestions and open positions; `POST /stocks/{symbol}/evidence` builds one on demand (synchronous, under 10 s) → 201.
+
+```ts
+export interface QuarterRow { period: string; filed_on: string | null; revenue: number | null; ebitda: number | null; net_profit: number | null; eps: number | null; margin_pct: number | null; }
+export interface Ownership { as_of: string | null; promoter_pct: number | null; promoter_change_pct: number | null; fii_pct: number | null; dii_pct: number | null; public_pct: number | null; pledge_pct: number | null; }
+export interface DealRow { date: string; kind: 'bulk' | 'block' | 'insider_buy' | 'insider_sell'; party: string; qty: number; price: number | null; }
+export interface EventRow { date: string; kind: string; title: string; }
+export interface Headline { date: string; title: string; source: string; url: string; }
+export interface MarketContext { day: string; nifty_close: number | null; nifty_vs_ema50_pct: number | null; nifty_1w_pct: number | null; vix: number | null; advance_decline: number | null; fii_net_cr: number | null; dii_net_cr: number | null; sector_index: string | null; sector_1w_pct: number | null; sp500_1d_pct: number | null; crude_1w_pct: number | null; usdinr_1w_pct: number | null; }
+export interface EvidencePack { symbol: string; day: string; price: { close: number; change_1w_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; vs_nifty_1m_pct: number | null; vs_sector_1m_pct: number | null; dist_52w_high_pct: number | null; volume_ratio: number | null; delivery_pct_now: number | null; delivery_pct_prev: number | null; ema_trend: string | null; rsi: number | null; }; quarters: QuarterRow[]; ownership: Ownership | null; deals: DealRow[]; events: EventRow[]; headlines: Headline[]; market: MarketContext; rules_verdict: Verdict | null; plan: Plan | null; unavailable: string[]; }
+```
+`unavailable` names every section that could not be filled (e.g. `"ownership"`, `"headlines"`); sections are never fabricated.
+
+### Analyst view
+`POST /stocks/{symbol}/analyst-view?profile_id=` → 202 `{ "status": "queued" }` or 200 `AnalystView` if one exists for the day. `GET /stocks/{symbol}/analyst-view?day=` → `AnalystView`, 404 if none. `SuggestionDetail` and `WatchlistHit` gain `analyst: AnalystView | null` (the view for the row's trading day).
+
+```ts
+export type Confidence = 'low' | 'medium' | 'high';
+export type AnalystAction = 'buy' | 'watch' | 'avoid' | 'add' | 'hold' | 'trim' | 'exit';
+export interface AnalystView { id: number; symbol: string; day: string; profile_id: number; observations: string[]; anomalies: string[]; bull_case: string; bear_case: string; tests: { claim: string; evidence: 'present' | 'absent' | 'unknown'; note: string }[]; action: AnalystAction; direction: Direction; horizon_sessions: 20; confidence: Confidence; trigger: string; want_to_know: string; agrees_with_rules: boolean | null; audited: boolean; audit_notes: string[]; model: string; created_at: string; }
+```
+Rules: the model is Claude Opus 5.5 with adaptive thinking; web search is allowed only to fetch news for the symbol and the result is appended to the pack's `headlines` before reasoning. Output is strict JSON. **Audit**: every number in the text fields must appear in the evidence pack (±1 % tolerance, percentages and rupees); on failure the model is re-asked once with the offending numbers listed; a second failure stores the view with `audited: false` and the UI shows it with a warning. `agrees_with_rules` compares `action` to the rules verdict's overall (buy↔buy, avoid↔avoid/exit, else false; null when no rules verdict). Views are cached per (symbol, day, profile).
+
+### Market brief
+`GET /market/brief?day=` → `MarketBrief` (latest if omitted); `GET /market/briefs?limit=10` → `MarketBrief[]`.
+
+```ts
+export type Regime = 'risk_on' | 'neutral' | 'risk_off';
+export interface MarketBrief { day: string; regime: Regime; context: MarketContext; leaders: { index: string; change_1w_pct: number }[]; laggards: { index: string; change_1w_pct: number }[]; facts: string[]; paragraph: string; stance: string; created_at: string; }
+```
+`regime` is deterministic: risk_on if Nifty above EMA50, VIX under 15 and advance/decline over 1; risk_off if Nifty below EMA50 or VIX over 20 or FII net selling over ₹2,000 cr for 3 sessions; else neutral. `facts` are deterministic sentences with figures; `paragraph` and `stance` (one line, e.g. "Small caps weak; do not add, hold winners with stops") are written by the model from `facts` only and audited the same way.
+
+### Verdict log and scorecard
+Every rules verdict produced by a run, watchlist run or Explore analysis, and every analyst view, is logged once per (symbol, day, source, profile) with the close that day, the action, the direction and the level. The daily job marks each logged verdict at 20, 40 and 60 sessions after its day.
+
+`GET /scorecard?profile_id=&source=rules|analyst|both&horizon=20|40|60` → `Scorecard`.
+`GET /scorecard/verdicts?profile_id=&symbol=&limit=50` → `LoggedVerdict[]` newest first.
+
+```ts
+export type VerdictSource = 'rules' | 'analyst';
+export interface LoggedVerdict { id: number; symbol: string; day: string; source: VerdictSource; profile_id: number; action: AnalystAction; direction: Direction; level: number | null; close: number; marks: { sessions: 20 | 40 | 60; date: string; close: number; change_pct: number; right: boolean }[]; }
+export interface ScorecardRow { key: string; verdicts: number; marked: number; right: number; hit_rate_pct: number | null; avg_change_pct: number | null; }
+export interface Scorecard { profile_id: number; source: VerdictSource | 'both'; horizon: 20 | 40 | 60; total: ScorecardRow; by_source: ScorecardRow[]; by_action: ScorecardRow[]; by_signal: ScorecardRow[]; by_month: ScorecardRow[]; worst: LoggedVerdict[]; }
+```
+A mark is `right` when the change matches the direction: up → change > 0, down → change < 0, sideways → |change| ≤ 5.
+
+### Frontend
+- **Stocks page**: a market-brief banner at the top (regime badge, stance line, "Read brief" → `/market`).
+- **`/market`**: the brief (facts, paragraph, leaders, laggards, context tiles) and a list of past briefs.
+- **Stock dialog**: an **Analyst view** block under "Our call": action and confidence badges, "agrees with rules" chip, anomalies first, bull and bear case side by side, the tests table, trigger and want-to-know lines, the audit warning when `audited` is false, and a **Run analyst** button when `analyst` is null (polls until the view exists). The evidence pack is a fourth row in the Details accordion.
+- **`/scorecard`**: controls for profile, source and horizon; stat tiles (verdicts, marked, hit rate, average change); tables by source, action, signal and month; the worst-misses list with a link to each symbol's dialog.
+- Sidebar order: Stocks, Tracker, Holdings, Scorecard, Loss Analysis, Backtest, Strategies.
+
+---
+
 ## Jobs (daily monitoring)
 
 `POST /jobs/daily-update` → 202 `{ "started": true }` (runs in background; 200 `{ "started": false, "reason": "already running" }`).
@@ -478,6 +547,8 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
 - 2026-11-06 (guide): **Backtests** added (see the "Backtests" section; types in the section's snippet, not duplicated in the main block).
 
 - 2026-11-06 (guide): **Decision** added (dialog leads with verdict, proof, expectation, review rule; details collapsed). `SuggestionDetail` and `WatchlistHit` gain `decision`. Types live in the Decision section's snippet.
+
+- 2026-11-06 (guide): **The brain** added: sources, evidence packs, analyst view, market brief, verdict log and scorecard. See `docs/BRAIN_PLAN.md`; types in that section's snippet.
 
 ### Open
 - 2026-11-05 (frontend): **`WatchlistItem` error rows contradict their type.** The prose says an unknown or unscorable symbol comes back with `error` set "and score fields null", but `WatchlistItem extends SuggestionSummary`, where `id`, `score`, `price`, `entry_optimal`, `stop_loss`, `target`, `risk_reward`, `horizon_days`, `stage`, `signal`, `planned_exit_date` are all non-null, and `filters: FilterResult` is required. An unknown symbol also has no persisted suggestion, so there is no real `id`. Proposal: a discriminated union, so neither side has to guess:
