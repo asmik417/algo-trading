@@ -64,7 +64,17 @@ def test_no_secret_in_any_get_response_or_log(client, market, secrets_set, monke
     failed = _run(client, pid)
     assert failed["status"] == "failed" and "***" in failed["error"]
 
-    ids = {"profile_id": pid, "run_id": failed["id"], "suggestion_id": sid, "position_id": pos, "symbol": "GOODCO"}
+    # A backtest that fails with every secret in its exception text: GET /backtests/{id} must serve it masked.
+    from app.services import backtest_service, market_data
+    monkeypatch.setattr(backtest_service, "_spawn", backtest_service.execute)
+    monkeypatch.setattr(market_data, "histories_for_range", boom)
+    bt = client.post("/api/v1/backtests", json={"profile_id": pid, "start_date": "2026-01-02",
+                                                "end_date": "2026-11-04"}).json()
+    bt = client.get(f"/api/v1/backtests/{bt['id']}").json()
+    assert bt["status"] == "failed" and "***" in bt["error"]
+
+    ids = {"profile_id": pid, "run_id": failed["id"], "suggestion_id": sid, "position_id": pos, "symbol": "GOODCO",
+           "backtest_id": bt["id"]}
     paths = _get_paths(ids)
     for path in paths:
         r = client.get(path)
