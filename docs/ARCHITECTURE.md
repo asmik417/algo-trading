@@ -51,6 +51,10 @@ backend/
 │   │   ├── analysis_service.py builds the "SuggestionDetail" shape (chart, breakdown, narration)
 │   │   ├── tracker_service.py  open / mark / extend / shorten / close / stats
 │   │   ├── backtest_service.py runs a backtest in the background, persists results
+│   │   ├── evidence_service.py builds EvidencePack per symbol per day
+│   │   ├── analyst_service.py  Claude analyst view + number audit
+│   │   ├── market_brief_service.py regime + brief
+│   │   ├── scorecard_service.py verdict log + marks + scorecard
 │   │   ├── review_service.py   loss reviews and tag summaries
 │   │   └── run_registry.py     in-memory status of background runs
 │   ├── api/v1/                 one router per resource; `router.py` aggregates them
@@ -58,12 +62,14 @@ backend/
 │   │   ├── config.py           thresholds, weights defaults, cache dirs, DB path
 │   │   ├── params.py           ScreenParams + PARAM_SPEC (drives the Account form)
 │   │   ├── data/               nse_universe (bhavcopy), fetcher (yfinance), indicators
+│   │   │   └── sources/        one puller per external source (announcements, deals, insider, shareholding, market, global_cues, news, results)
 │   │   ├── scoring/            six pillars, engine.evaluate(), stage, signal
 │   │   ├── scanner/            the old two-stage funnel (reference; superseded by suggestion_service)
 │   │   ├── backtest/           pure replay + simulation + loss-pattern tagging (no DB/HTTP)
 │   │   └── agents/             LLM narration (emerging_explainer) and legacy agents
 │   └── jobs/
-│       └── daily_update.py     refresh panel → mark positions → close/due → record meta
+│       ├── daily_update.py     refresh panel → mark positions → close/due → record meta
+│       └── nightly_brain.py    sources → results → brief → packs → analyst views → verdict log → marks
 ├── scripts/                    CLI entry points (run_daily_update.py, seed_profiles.py, analyze_cli.py)
 ├── tests/
 ├── data/                       SQLite file + caches (gitignored)
