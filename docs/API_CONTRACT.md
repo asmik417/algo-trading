@@ -108,7 +108,7 @@ WatchlistItem = WatchlistHit | WatchlistMiss   // see the TS below; a miss carri
 
 ```ts
 // WatchlistRunBody: see "Pick lists" (list_id or symbols, exactly one)
-export interface WatchlistHit extends SuggestionSummary { decision: Decision; filters: FilterResult; error: null; }
+export interface WatchlistHit extends SuggestionSummary { decision: Decision; analyst: AnalystView | null; filters: FilterResult; error: null; }
 export interface WatchlistMiss { id: null; symbol: string; error: string; filters: null; score: null; signal: null; stage: null; price: null; is_tracked: false; position_id: null; }
 export type WatchlistItem = WatchlistHit | WatchlistMiss;
 export interface WatchlistResults { run: Run; items: WatchlistItem[]; }
@@ -388,6 +388,7 @@ export interface SourceStatus { source: string; day: string; status: 'ok' | 'emp
 `GET /stocks/{symbol}/evidence?day=` → `EvidencePack` for that day (latest if omitted); 404 if none built. Built only for pick-list stocks, the day's algo suggestions and open positions; `POST /stocks/{symbol}/evidence` builds one on demand (synchronous, under 10 s) → 201.
 
 ```ts
+// money in ₹ crore, eps in ₹, period = quarter-end date
 export interface QuarterRow { period: string; filed_on: string | null; revenue: number | null; ebitda: number | null; net_profit: number | null; eps: number | null; margin_pct: number | null; }
 export interface Ownership { as_of: string | null; promoter_pct: number | null; promoter_change_pct: number | null; fii_pct: number | null; dii_pct: number | null; public_pct: number | null; pledge_pct: number | null; }
 export interface DealRow { date: string; kind: 'bulk' | 'block' | 'insider_buy' | 'insider_sell'; party: string; qty: number; price: number | null; }
@@ -396,24 +397,25 @@ export interface Headline { date: string; title: string; source: string; url: st
 export interface MarketContext { day: string; nifty_close: number | null; nifty_vs_ema50_pct: number | null; nifty_1w_pct: number | null; vix: number | null; advance_decline: number | null; fii_net_cr: number | null; dii_net_cr: number | null; sector_index: string | null; sector_1w_pct: number | null; sp500_1d_pct: number | null; crude_1w_pct: number | null; usdinr_1w_pct: number | null; }
 export interface EvidencePack { symbol: string; day: string; price: { close: number; change_1w_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; vs_nifty_1m_pct: number | null; vs_sector_1m_pct: number | null; dist_52w_high_pct: number | null; volume_ratio: number | null; delivery_pct_now: number | null; delivery_pct_prev: number | null; ema_trend: string | null; rsi: number | null; }; quarters: QuarterRow[]; ownership: Ownership | null; deals: DealRow[]; events: EventRow[]; headlines: Headline[]; market: MarketContext; rules_verdict: Verdict | null; plan: Plan | null; unavailable: string[]; }
 ```
-`unavailable` names every section that could not be filled (e.g. `"ownership"`, `"headlines"`); sections are never fabricated.
+`unavailable` names every section that could not be filled (`quarters`, `ownership`, `deals`, `events`, `headlines`, `rules_verdict`, `plan`) and single missing fields in dotted form (`price.vs_sector_1m_pct`, `ownership.fii_pct`, `market.vix`, `deals.insider`); sections are never fabricated. Windows: `price.change_*` = 5 / 21 / 63 sessions, deals 30 days, headlines 7 days, events = last 30 days plus known calendar events in the next 30. `dist_52w_high_pct` is against the highest close of 252 sessions; `delivery_pct_prev` is the 20-session average before today. Followed set for nightly packs: pick-list stocks, the latest finished full run of each profile, open and due positions.
 
 ### Analyst view
-`POST /stocks/{symbol}/analyst-view?profile_id=` → 202 `{ "status": "queued" }` or 200 `AnalystView` if one exists for the day. `GET /stocks/{symbol}/analyst-view?day=` → `AnalystView`, 404 if none. `SuggestionDetail` and `WatchlistHit` gain `analyst: AnalystView | null` (the view for the row's trading day).
+`POST /stocks/{symbol}/analyst-view?profile_id=` → 202 `{ "status": "queued" }` or 200 `AnalystView` if one exists for the day. `GET /stocks/{symbol}/analyst-view?day=&profile_id=` → `AnalystView` (profile defaults to the active one), 404 if none. `SuggestionDetail` and `WatchlistHit` gain `analyst: AnalystView | null` (the view for the row's trading day).
 
 ```ts
-export type Confidence = 'low' | 'medium' | 'high';
+export type AnalystConfidence = 'low' | 'medium' | 'high';
 export type AnalystAction = 'buy' | 'watch' | 'avoid' | 'add' | 'hold' | 'trim' | 'exit';
-export interface AnalystView { id: number; symbol: string; day: string; profile_id: number; observations: string[]; anomalies: string[]; bull_case: string; bear_case: string; tests: { claim: string; evidence: 'present' | 'absent' | 'unknown'; note: string }[]; action: AnalystAction; direction: Direction; horizon_sessions: 20; confidence: Confidence; trigger: string; want_to_know: string; agrees_with_rules: boolean | null; audited: boolean; audit_notes: string[]; model: string; created_at: string; }
+export type AnalystRunResult = { status: 'queued' } | AnalystView;
+export interface AnalystView { id: number; symbol: string; day: string; profile_id: number; observations: string[]; anomalies: string[]; bull_case: string; bear_case: string; tests: { claim: string; evidence: 'present' | 'absent' | 'unknown'; note: string }[]; action: AnalystAction; direction: Direction; horizon_sessions: 20; confidence: AnalystConfidence; trigger: string; want_to_know: string; agrees_with_rules: boolean | null; audited: boolean; audit_notes: string[]; model: string; created_at: string; }
 ```
-Rules: the model is Claude Opus 5.5 with adaptive thinking; web search is allowed only to fetch news for the symbol and the result is appended to the pack's `headlines` before reasoning. Output is strict JSON. **Audit**: every number in the text fields must appear in the evidence pack (±1 % tolerance, percentages and rupees); on failure the model is re-asked once with the offending numbers listed; a second failure stores the view with `audited: false` and the UI shows it with a warning. `agrees_with_rules` compares `action` to the rules verdict's overall (buy↔buy, avoid↔avoid/exit, else false; null when no rules verdict). Views are cached per (symbol, day, profile).
+Rules: the model is Claude Opus 5.5 with adaptive thinking; web search is allowed only to fetch news for the symbol and the result is appended to the pack's `headlines` before reasoning. Output is strict JSON. **Audit**: every number in the text fields must appear in the evidence pack (±1 % tolerance, percentages and rupees); on failure the model is re-asked once with the offending numbers listed; a second failure stores the view with `audited: false` and the UI shows it with a warning. `agrees_with_rules` compares `action` to the rules verdict's overall: agreeing pairs are buy↔buy/add, watch↔watch/hold, avoid↔avoid/exit/trim; else false; null when no rules verdict. The analyst is given the **profile's own** rules verdict for the day (the pack's `rules_verdict` is the active strategy's). Views are cached per (symbol, day, profile).
 
 ### Market brief
 `GET /market/brief?day=` → `MarketBrief` (latest if omitted); `GET /market/briefs?limit=10` → `MarketBrief[]`.
 
 ```ts
 export type Regime = 'risk_on' | 'neutral' | 'risk_off';
-export interface MarketBrief { day: string; regime: Regime; context: MarketContext; leaders: { index: string; change_1w_pct: number }[]; laggards: { index: string; change_1w_pct: number }[]; facts: string[]; paragraph: string; stance: string; created_at: string; }
+export interface MarketBrief { day: string; regime: Regime; audited: boolean; audit_notes: string[]; model: string; context: MarketContext; leaders: { index: string; change_1w_pct: number }[]; laggards: { index: string; change_1w_pct: number }[]; facts: string[]; paragraph: string; stance: string; created_at: string; }
 ```
 `regime` is deterministic: risk_on if Nifty above EMA50, VIX under 15 and advance/decline over 1; risk_off if Nifty below EMA50 or VIX over 20 or FII net selling over ₹2,000 cr for 3 sessions; else neutral. `facts` are deterministic sentences with figures; `paragraph` and `stance` (one line, e.g. "Small caps weak; do not add, hold winners with stops") are written by the model from `facts` only and audited the same way.
 
@@ -485,7 +487,7 @@ export interface RunProgress { phase: string; done: number; total: number; curre
 export interface Run { id: number; profile_id: number; status: RunStatus; kind: RunKind; symbols: string[] | null; list_id: number | null; list_name: string | null; trading_day: string | null; progress: RunProgress; universe_size: number | null; scored_size: number | null; passed_size: number | null; error: string | null; started_at: string | null; finished_at: string | null; created_at: string; }
 
 export type SuggestionSource = 'run' | 'explore' | 'watchlist';
-export interface SuggestionSummary { id: number; source: SuggestionSource; verdict: Verdict; symbol: string; rank: number | null; score: number; stage: string; signal: string; price: number; entry_optimal: number; stop_loss: number; target: number; risk_reward: number; horizon_days: number; planned_exit_date: string; market_cap_bucket: string; sector: string | null; profit_yoy_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; volume_ratio_20d: number | null; is_tracked: boolean; position_id: number | null; }
+export interface SuggestionSummary { id: number; source: SuggestionSource; verdict: Verdict; headline: string; symbol: string; rank: number | null; score: number; stage: string; signal: string; price: number; entry_optimal: number; stop_loss: number; target: number; risk_reward: number; horizon_days: number; planned_exit_date: string; market_cap_bucket: string; sector: string | null; profit_yoy_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; volume_ratio_20d: number | null; is_tracked: boolean; position_id: number | null; }
 export interface Reasons { why_flagged: string; what_changed: string; positives: string[]; risks: string[]; }
 export interface Plan { entry_aggressive: number; entry_optimal: number; entry_conservative: number; stop_loss: number; target: number; risk_reward: number; horizon_days: number; planned_exit_date: string; timing_note: string; exit_note: string; disclaimer: string; }
 export interface PillarScore { key: string; label: string; score: number | null; max: number; weight: number; available: boolean; details: Record<string, number | string | null>; }
@@ -493,7 +495,7 @@ export interface Indicators { rsi: number | null; macd_signal: string | null; em
 export interface Fundamentals { pe: number | null; pb: number | null; roe_pct: number | null; debt_to_equity: number | null; market_cap: number | null; sector: string | null; industry: string | null; revenue_yoy_pct: number | null; profit_yoy_pct: number | null; eps_yoy_pct: number | null; operating_margin_pct: number | null; latest_ocf: number | null; }
 export interface ChartData { dates: string[]; close: number[]; ema20: (number | null)[]; ema50: (number | null)[]; volume: number[]; }
 export interface FilterResult { passed: boolean; failures: string[]; }
-export interface SuggestionDetail extends SuggestionSummary { trading_day: string; decision: Decision; reasons: Reasons; plan: Plan; score_breakdown: PillarScore[]; indicators: Indicators; fundamentals: Fundamentals; chart: ChartData; filters: FilterResult; }
+export interface SuggestionDetail extends SuggestionSummary { trading_day: string; decision: Decision; analyst: AnalystView | null; reasons: Reasons; plan: Plan; score_breakdown: PillarScore[]; indicators: Indicators; fundamentals: Fundamentals; chart: ChartData; filters: FilterResult; }
 export interface SuggestionsResponse { run: Run | null; items: SuggestionSummary[]; }
 
 export interface StockRow { symbol: string; close: number; change_1d_pct: number | null; change_1w_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; dist_from_52w_high_pct: number | null; volume_ratio_20d: number | null; avg_turnover_lacs: number | null; }
@@ -524,7 +526,10 @@ export interface ClosePositionBody { reason: string; }
 export interface NoteBody { note: string; }
 export interface ReviewBody { reasons: string[]; mistakes: string; lesson: string; algo_change: string; }
 
-export interface JobStatus { running: boolean; last_daily_update: string | null; last_trading_day: string | null; next_scheduled: string | null; last_summary: { marked: number; closed_target: number; closed_stop: number; marked_due: number } | null; }
+export interface BrainStatus { running: boolean; last_day: string | null; sources: SourceStatus[]; packs_built: number; views_built: number; views_failed: number; }
+export interface NightlyBrainBody { day?: string; }
+export interface NightlyBrainStarted { job_id: number; }
+export interface JobStatus { brain: BrainStatus | null; running: boolean; last_daily_update: string | null; last_trading_day: string | null; next_scheduled: string | null; last_summary: { marked: number; closed_target: number; closed_stop: number; marked_due: number } | null; }
 ```
 
 ---
@@ -552,6 +557,11 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
 - 2026-11-06 (guide): **The brain** added: sources, evidence packs, analyst view, market brief, verdict log and scorecard. See `docs/BRAIN_PLAN.md`; types in that section's snippet.
 
 - 2026-11-06 (frontend → accepted): `LoggedVerdict.signal` added; `avg_change_pct` defined as change in the direction of the call, sideways excluded, labelled "Avg edge".
+
+### Resolved 2026-11-06 (guide), the brain and Decision proposals
+- Backend part 1: **all accepted.** `BrainStatus`, `NightlyBrainBody`, `NightlyBrainStarted` added to the TS block; `JobStatus.brain` added. DATA_MODEL updated (news_items, brain_jobs, long market_context, uid/pulled_day/data_json, source_pulls.inserted). Insider stays `failed` with reason until a browser-session fetch is approved; deals and FII/DII are latest-session only; intraday index pulls store nothing; `fii_pct`/`dii_pct` stay null; ET Markets + Google News for news; results method as described.
+- Backend part 2: **all accepted.** `MarketBrief` gains `audited`, `audit_notes`, `model`. Units, windows, dotted `unavailable` names, sector mapping, regime reading, evidence POST behaviour and the followed set are now in the Evidence pack and Market brief prose. For the analyst view (part 3) the service passes the profile's own rules verdict.
+- Frontend: **all accepted.** `SuggestionSummary.headline` (rebuilt on read); `AnalystConfidence` rename; `analyst` on `SuggestionDetail`/`WatchlistHit`; `AnalystRunResult`; `GET …/analyst-view` takes `profile_id` defaulting to active; agreeing pairs widened to buy↔buy/add, watch↔watch/hold, avoid↔avoid/exit/trim; QuarterRow units stated; scorecard `signal` and directional `avg_change_pct` ("Avg edge") were resolved in the previous commit.
 
 ### Open
 - 2026-11-05 (frontend): **`WatchlistItem` error rows contradict their type.** The prose says an unknown or unscorable symbol comes back with `error` set "and score fields null", but `WatchlistItem extends SuggestionSummary`, where `id`, `score`, `price`, `entry_optimal`, `stop_loss`, `target`, `risk_reward`, `horizon_days`, `stage`, `signal`, `planned_exit_date` are all non-null, and `filters: FilterResult` is required. An unknown symbol also has no persisted suggestion, so there is no real `id`. Proposal: a discriminated union, so neither side has to guess:
@@ -617,3 +627,10 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
     - `evidence_packs`: `(symbol, day)` unique.
     - `market_briefs`: gains `audited`, `audit_notes_json` and `model`.
     - The nightly summary gains `brief` (`{regime, audited}`) and `packs_failed` (`{symbol: why}`).
+- 2026-11-06 (frontend): **Row tooltips need the headline on the list rows.** The Dialog layout says the `headline` becomes the row tooltip in Algo Suggested, Explore and My Picks, but only `SuggestionDetail` and `WatchlistHit` carry `decision`. Algo Suggested rows are `SuggestionSummary` (no headline) and Explore rows are `StockRow` (not analysed yet, so no decision exists). Today the UI shows the headline on My Picks rows always, and on Algo Suggested / Explore rows only once that stock's detail or analysis has been loaded (read from cache, no extra requests; Explore rows otherwise say "Analyse <symbol> under <strategy>"). Proposal: add `headline: string` to `SuggestionSummary` (rebuilt on read like the verdict), so every Algo Suggested row gets its tooltip without fetching details. Explore stays as is (there is no decision before analysis).
+- 2026-11-06 (frontend): **The brain's snippet clashes with Decision on `Confidence`.** Decision declares `interface Confidence { signal_win_rate_pct; trades; backtest_id }`; The brain declares `type Confidence = 'low' | 'medium' | 'high'`. Both copied verbatim into one module do not compile. Frontend keeps the brain's snippet in its own module (`types/brain.ts`) for now. Proposal: rename the brain's type to `AnalystConfidence` (used only by `AnalystView.confidence`).
+- 2026-11-06 (frontend): **`analyst` and `JobStatus.brain` are in the prose but not in the TS.** The prose says `SuggestionDetail` and `WatchlistHit` gain `analyst: AnalystView | null` and `GET /jobs/status` gains `brain: {…} | null`, but neither TS block declares them. Proposal: add `analyst: AnalystView | null` to both interfaces and `brain: BrainStatus | null` to `JobStatus`, with `export interface BrainStatus { running: boolean; last_day: string | null; sources: SourceStatus[]; packs_built: number; views_built: number; views_failed: number; }`. Also name the POST result: `export type AnalystRunResult = { status: 'queued' } | AnalystView;`. Frontend declares these three under a marked block in `types/brain.ts` until then. When `analyst` is missing from a detail (older backend), the dialog asks `GET /stocks/{symbol}/analyst-view` instead.
+- 2026-11-06 (frontend): **`GET /stocks/{symbol}/analyst-view` has no `profile_id`.** Views are cached per (symbol, day, profile) and the POST takes `profile_id`, but the GET takes only `day`, so with two strategies it is ambiguous which view comes back (the UI polls this GET after "Run analyst"). Proposal: `GET /stocks/{symbol}/analyst-view?day=&profile_id=` (profile defaults to the active one). Frontend sends only `day` today, as written.
+- 2026-11-06 (frontend): **`agrees_with_rules` is false when both say Watch.** By the rule (buy↔buy, avoid↔avoid/exit, else false), an analyst Watch on a rules Watch counts as "does not agree", which reads wrong in the dialog. Proposal: add watch↔watch (and hold↔watch, if intended) to the agreeing pairs. The UI shows `false` as "Does not agree with rules" and `null` as "No rules verdict to compare".
+- 2026-11-06 (frontend): **Units for `QuarterRow` money fields.** `revenue`, `ebitda` and `net_profit` have no stated unit (rupees or ₹ crore?), nor does `eps` (₹ per share, presumably). The evidence row shows them as plain numbers until the unit is written down. Proposal: state "₹ crore" (the unit results are filed in) for the three totals and "₹" for `eps`.
+- 2026-11-06 (frontend): **Scorecard: what `avg_change_pct` and `by_signal` mean.** (1) Is `avg_change_pct` the plain average price change of the marked verdicts at the horizon (so Avoid calls that worked pull it down), or the change signed by direction (positive = moved the way the call said)? The UI labels it "price change after N sessions" and the mock uses the plain average. (2) `by_signal` groups by a signal that `LoggedVerdict` does not carry; please state that an analyst verdict takes the rules signal of the same (symbol, day), and consider adding `signal: string | null` to `LoggedVerdict` so the worst-misses list can show it.

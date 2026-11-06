@@ -298,15 +298,21 @@ export const UNIVERSE: [symbol: string, close: number][] = [
 
 // ---------- loss-review tags and reviews ----------
 
+/** Mirrors the live GET /reviews/tags (keys and labels), so Loss Analysis and backtest loss patterns match the backend. */
 export const REVIEW_TAGS: ReviewTag[] = [
   { key: 'bought_extended', label: 'Bought when already extended' },
-  { key: 'stop_too_tight', label: 'Stop-loss too tight' },
+  { key: 'stop_too_tight', label: 'Stop-loss was too tight' },
+  { key: 'stop_too_wide', label: 'Stop-loss was too wide' },
+  { key: 'earnings_miss', label: 'Earnings missed expectations' },
   { key: 'whole_market_fell', label: 'Whole market fell' },
-  { key: 'news_event', label: 'Unexpected news or event' },
-  { key: 'poor_entry_timing', label: 'Poor entry timing' },
+  { key: 'sector_news', label: 'Sector news' },
+  { key: 'company_news', label: 'Company-specific news' },
+  { key: 'weak_fundamentals_missed', label: 'Weak fundamentals the algo missed' },
+  { key: 'low_liquidity', label: 'Low liquidity' },
   { key: 'held_too_long', label: 'Held too long' },
-  { key: 'ignored_risk', label: 'Ignored a flagged risk' },
-  { key: 'weak_fundamentals', label: 'Weak fundamentals' },
+  { key: 'exited_too_early', label: 'Exited too early' },
+  { key: 'bad_entry_timing', label: 'Bad entry timing' },
+  { key: 'other', label: 'Other' },
 ];
 
 export const REVIEW_SEEDS: Review[] = [
@@ -334,7 +340,7 @@ export const REVIEW_SEEDS: Review[] = [
     pnl_pct: -3.1,
     closed_on: '2026-10-30',
     close_reason: 'horizon_closed',
-    reasons: ['bought_extended', 'poor_entry_timing'],
+    reasons: ['bought_extended', 'bad_entry_timing'],
     mistakes:
       'Entered at the aggressive level after a 30% three-month run; the stock then consolidated until the exit date.',
     lesson: 'Extended stocks need a pullback entry, not a market buy.',

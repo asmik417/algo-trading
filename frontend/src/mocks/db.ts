@@ -73,6 +73,10 @@ import {
   riskReward,
   summarizeParams,
 } from './fixtures';
+import type { AnalystRunResult, AnalystView, EvidencePack, WithAnalyst } from '../types/brain';
+import { signalConfidence } from './backtests';
+import * as brain from './brain';
+import { buildDecision } from './decision';
 import { fail } from './respond';
 import { getMockSession } from './session';
 
@@ -494,11 +498,20 @@ function buildDetail(
   const chart = buildChart(s.symbol, s.price, s.change_3m_pct ?? 0);
   const indicators = buildIndicators(s.symbol, s.price, chart, s.volume_ratio_20d);
   const fundamentals = buildFundamentals(s);
+  const plan = buildPlan(s);
   return {
     ...s,
     trading_day: TRADING_DAY,
+    decision: buildDecision(
+      s,
+      plan,
+      indicators,
+      fundamentals,
+      chart,
+      signalConfidence(profile.id, s.signal),
+    ),
     reasons: buildReasons(s, indicators.rsi),
-    plan: buildPlan(s),
+    plan,
     score_breakdown: buildBreakdown(s, profile),
     indicators,
     fundamentals,
@@ -1145,6 +1158,7 @@ export function listRuns(profileId: number, limit = 10): Run[] {
 const MAX_WATCHLIST = 50;
 const DETAIL_ONLY = new Set([
   'trading_day',
+  'decision',
   'reasons',
   'plan',
   'score_breakdown',
@@ -1186,7 +1200,7 @@ function buildWatchlistItem(profile: Profile, symbol: string): WatchlistItem {
     : { ...syntheticSummary(id, symbol, row.close, profile), source: 'watchlist' };
   const detail = buildDetail(summary, profile, !inList);
   state.adhoc.push({ profileId: profile.id, detail });
-  return { ...summaryOf(detail), filters: detail.filters, error: null };
+  return { ...summaryOf(detail), decision: detail.decision, filters: detail.filters, error: null };
 }
 
 /** Results grow as the run analyses symbols (in requested order), like the real backend. */
@@ -1281,7 +1295,15 @@ export function getRunResults(runId: number): WatchlistResults {
   const items = ensureWatchlistItems(run, analysed).map((item): WatchlistItem => {
     if (item.error !== null) return item; // a miss is never tracked
     const pos = isTracked(run.profile_id, item.symbol);
-    return { ...item, is_tracked: !!pos, position_id: pos?.id ?? null };
+    const stored = state.adhoc.find((a) => a.detail.id === item.id);
+    // "WatchlistHit gains analyst" (contract "The brain"); the TS block does not declare it yet.
+    const hit: WithAnalyst<typeof item> = {
+      ...item,
+      is_tracked: !!pos,
+      position_id: pos?.id ?? null,
+      analyst: stored ? analystFor(stored.detail, run.profile_id) : null,
+    };
+    return hit;
   });
   return { run, items };
 }
@@ -1381,11 +1403,11 @@ export function getSuggestions(profileId: number, runId: number | 'latest'): Sug
   return { run, items: run ? suggestionsFor(profile) : [] };
 }
 
-export function getSuggestionDetail(id: number): SuggestionDetail {
+export function getSuggestionDetail(id: number): WithAnalyst<SuggestionDetail> {
   if (id >= ADHOC_ID_START) {
     const entry =
       state.adhoc.find((a) => a.detail.id === id) ?? fail(404, `Suggestion ${id} not found`);
-    return withTracking(entry);
+    return withAnalyst(withTracking(entry), entry.profileId);
   }
   const profile = findProfile(Math.floor(id / 100));
   const item = suggestionsFor(profile).find((s) => s.id === id);
@@ -1407,7 +1429,7 @@ export function getSuggestionDetail(id: number): SuggestionDetail {
       profile,
       true,
     );
-  return buildDetail(summary, profile, false);
+  return withAnalyst(buildDetail(summary, profile, false), profile.id);
 }
 
 // ---------------------------------------------------------------- stocks
@@ -1479,7 +1501,7 @@ function withTracking(entry: { profileId: number; detail: SuggestionDetail }): S
   return { ...entry.detail, is_tracked: !!pos, position_id: pos?.id ?? null };
 }
 
-export function analyzeStock(symbol: string, profileId: number): SuggestionDetail {
+export function analyzeStock(symbol: string, profileId: number): WithAnalyst<SuggestionDetail> {
   const profile = findProfile(profileId);
   const row = findRow(symbol);
   const existing = state.adhoc.find(
@@ -1493,7 +1515,73 @@ export function analyzeStock(symbol: string, profileId: number): SuggestionDetai
   const entry = { profileId, detail: buildDetail(summary, profile, !inList) };
   if (existing) existing.detail = entry.detail;
   else state.adhoc.push(entry);
-  return withTracking(entry);
+  return withAnalyst(withTracking(entry), profileId);
+}
+
+// ---------------------------------------------------------------- the brain (evidence packs, analyst views)
+
+function packFor(detail: SuggestionDetail): EvidencePack {
+  const row = STOCK_ROWS.find((r) => r.symbol === detail.symbol);
+  return brain.buildEvidencePack({
+    s: detail,
+    ind: detail.indicators,
+    plan: detail.plan,
+    change1w: row?.change_1w_pct ?? null,
+    dist52w: row?.dist_from_52w_high_pct ?? null,
+  });
+}
+
+function analystFor(detail: SuggestionDetail, profileId: number): AnalystView | null {
+  return brain.viewFor(detail, detail.decision, packFor(detail), profileId);
+}
+
+function withAnalyst(detail: SuggestionDetail, profileId: number): WithAnalyst<SuggestionDetail> {
+  return { ...detail, analyst: analystFor(detail, profileId) };
+}
+
+/** What the brain reasons over for a symbol under a strategy: the stored analysis, else the list entry, else a fresh score. */
+function detailForSymbol(symbol: string, profileId: number): SuggestionDetail {
+  const profile = findProfile(profileId);
+  const row = findRow(symbol);
+  const stored = state.adhoc.find(
+    (a) => a.profileId === profileId && a.detail.symbol === row.symbol,
+  );
+  if (stored) return stored.detail;
+  const inList = suggestionsFor(profile).find((s) => s.symbol === row.symbol);
+  const summary =
+    inList ?? syntheticSummary(0, row.symbol, universeClose(row.symbol) ?? row.close, profile);
+  return buildDetail(summary, profile, !inList);
+}
+
+function requireBrainDay(day: string | undefined, what: string): void {
+  if (day && day !== TRADING_DAY) fail(404, `No ${what} for ${day}`);
+}
+
+export function getEvidence(symbol: string, day?: string): EvidencePack {
+  requireBrainDay(day, 'evidence pack');
+  const row = findRow(symbol);
+  if (!brain.isPackBuilt(row.symbol)) fail(404, `No evidence pack built for ${row.symbol}`);
+  return packFor(detailForSymbol(row.symbol, getActiveProfile().id));
+}
+
+export function buildEvidence(symbol: string): EvidencePack {
+  const row = findRow(symbol);
+  brain.markPackBuilt(row.symbol);
+  return packFor(detailForSymbol(row.symbol, getActiveProfile().id));
+}
+
+export function requestAnalystView(symbol: string, profileId: number): AnalystRunResult {
+  const detail = detailForSymbol(symbol, profileId);
+  return brain.requestView(detail, detail.decision, packFor(detail), profileId);
+}
+
+/** The contract's GET takes only `day`, so the mock answers for the active strategy (see "Proposed changes"). */
+export function getAnalystView(symbol: string, day?: string): AnalystView {
+  requireBrainDay(day, 'analyst view');
+  const detail = detailForSymbol(symbol, getActiveProfile().id);
+  return (
+    analystFor(detail, getActiveProfile().id) ?? fail(404, `No analyst view for ${detail.symbol}`)
+  );
 }
 
 // ---------------------------------------------------------------- positions

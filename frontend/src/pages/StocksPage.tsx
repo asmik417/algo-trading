@@ -3,6 +3,7 @@ import { Compass, Settings2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/layout/PageHeader';
+import { MarketBriefBanner } from '../components/market/MarketBriefBanner';
 import { ExploreTable } from '../components/stocks/ExploreTable';
 import { MyPicksTab } from '../components/stocks/MyPicksTab';
 import { RunStatusBar } from '../components/stocks/RunStatusBar';
@@ -115,6 +116,7 @@ export default function StocksPage() {
 
   return (
     <div className="space-y-4">
+      <MarketBriefBanner />
       <PageHeader
         title={HEADINGS[tab]}
         description={

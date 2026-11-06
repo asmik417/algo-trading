@@ -8,7 +8,9 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useCachedAnalysisHeadlines } from '../../hooks/useCachedHeadlines';
 import { useStocks } from '../../hooks/useStocks';
+import { useActiveProfile } from '../../store/activeProfile';
 import { pnlClass } from '../../lib/colors';
 import { formatDate, formatINR, formatMultiple, formatNumber, formatPct } from '../../lib/format';
 import type { StockSortKey } from '../../types/ui';
@@ -52,6 +54,12 @@ export function ExploreTable({ onOpen }: { onOpen: (symbol: string) => void }) {
     offset: page * PAGE_SIZE,
   });
 
+  // The decision headline is the row tooltip once the stock has been analysed.
+  const { profile } = useActiveProfile();
+  const headlines = useCachedAnalysisHeadlines(
+    (data?.items ?? []).map((r) => r.symbol),
+    profile?.id,
+  );
   const total = data?.total ?? 0;
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min(total, (page + 1) * PAGE_SIZE);
@@ -145,6 +153,10 @@ export function ExploreTable({ onOpen }: { onOpen: (symbol: string) => void }) {
                 {data?.items.map((r) => (
                   <tr
                     key={r.symbol}
+                    title={
+                      headlines.get(r.symbol) ??
+                      (profile ? `Analyse ${r.symbol} under ${profile.name}` : undefined)
+                    }
                     tabIndex={0}
                     onClick={() => onOpen(r.symbol)}
                     onKeyDown={(e) => e.key === 'Enter' && onOpen(r.symbol)}

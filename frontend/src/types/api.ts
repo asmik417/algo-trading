@@ -1,16 +1,36 @@
-// Copied verbatim from docs/API_CONTRACT.md: the Auth, Watchlist runs and Pick lists snippets and the TypeScript
-// types section. Do not edit by hand.
+// Copied verbatim from docs/API_CONTRACT.md: the Auth, Watchlist runs, Pick lists, Decision and Backtests snippets and
+// the TypeScript types section. Do not edit by hand. (The brain's snippets live in ./brain.ts.)
 
 export interface LoginBody { username: string; password: string; }
 export interface Me { username: string; }
 
 // WatchlistRunBody: see "Pick lists" (list_id or symbols, exactly one)
-export interface WatchlistHit extends SuggestionSummary { filters: FilterResult; error: null; }
+export interface WatchlistHit extends SuggestionSummary { decision: Decision; filters: FilterResult; error: null; }
 export interface WatchlistMiss { id: null; symbol: string; error: string; filters: null; score: null; signal: null; stage: null; price: null; is_tracked: false; position_id: null; }
 export type WatchlistItem = WatchlistHit | WatchlistMiss;
 export interface WatchlistResults { run: Run; items: WatchlistItem[]; }
 
 export interface WatchlistRunBody { list_id?: number; symbols?: string[]; }   // exactly one
+
+export type Direction = 'up' | 'down' | 'sideways';
+export interface Finding { side: 'for' | 'against'; text: string; }           // text always carries its number, e.g. "Delivery % fell from 51% to 39% during the surge"
+export interface Expectation { direction: Direction; level: number | null; by_date: string; text: string; }
+export interface ReviewRule { until: string; trigger: string; }               // "do not revisit before <until> unless <trigger>"
+export interface Confidence { signal_win_rate_pct: number | null; trades: number | null; backtest_id: number | null; }
+export interface Decision { overall: Overall; headline: string; findings: Finding[]; expectation: Expectation; review: ReviewRule; confidence: Confidence; narrative: string; }
+
+export type ScanFrequency = 'weekly' | 'daily';
+export type EntryRule = 'next_close' | 'optimal_limit';
+export type FundamentalsMode = 'point_in_time' | 'technical_only';
+export type BacktestExit = CloseReason | 'open';
+export interface BacktestBody { profile_id: number; start_date: string; end_date: string; frequency?: ScanFrequency; entry_rule?: EntryRule; fundamentals_mode?: FundamentalsMode; cost_pct?: number; capital_per_trade?: number; }
+export interface BacktestSummary { trades: number; closed: number; wins: number; losses: number; open_at_end: number; skipped_repeat: number; skipped_no_fill: number; win_rate_pct: number | null; avg_win_pct: number | null; avg_loss_pct: number | null; avg_pnl_pct: number | null; expectancy_r: number | null; profit_factor: number | null; total_pnl: number; max_drawdown_pct: number | null; avg_days_held: number | null; nifty_avg_pct: number | null; exits: { target_hit: number; stop_hit: number; horizon_closed: number; open: number }; }
+export interface Backtest { id: number; profile_id: number; profile_name: string; status: RunStatus; start_date: string; end_date: string; frequency: ScanFrequency; entry_rule: EntryRule; fundamentals_mode: FundamentalsMode; cost_pct: number; capital_per_trade: number; params: Record<string, unknown>; progress: RunProgress; scan_count: number | null; summary: BacktestSummary | null; caveats: string[]; error: string | null; started_at: string | null; finished_at: string | null; created_at: string; }
+export interface BacktestBreakdownRow { key: string; trades: number; win_rate_pct: number | null; avg_pnl_pct: number | null; total_pnl: number; }
+export interface BacktestLossPattern { key: string; label: string; count: number; share_pct: number; }
+export interface BacktestTrade { id: number; symbol: string; scan_date: string; entry_date: string; entry_price: number; qty: number; invested: number; stop_loss: number; target: number; planned_exit_date: string; signal: string; stage: string; score: number; market_cap_bucket: string; sector: string | null; exit_date: string | null; exit_price: number | null; exit_reason: BacktestExit; pnl: number; pnl_pct: number; r_multiple: number | null; days_held: number; mfe_pct: number | null; mae_pct: number | null; nifty_pct: number | null; tags: string[]; }
+export interface EquityPoint { date: string; pnl: number; }
+export interface BacktestResults { backtest: Backtest; by_signal: BacktestBreakdownRow[]; by_stage: BacktestBreakdownRow[]; by_market_cap: BacktestBreakdownRow[]; by_sector: BacktestBreakdownRow[]; by_month: BacktestBreakdownRow[]; loss_patterns: BacktestLossPattern[]; equity_curve: EquityPoint[]; trades: BacktestTrade[]; }
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed';
 export type RunKind = 'full' | 'watchlist';
@@ -44,7 +64,7 @@ export interface Indicators { rsi: number | null; macd_signal: string | null; em
 export interface Fundamentals { pe: number | null; pb: number | null; roe_pct: number | null; debt_to_equity: number | null; market_cap: number | null; sector: string | null; industry: string | null; revenue_yoy_pct: number | null; profit_yoy_pct: number | null; eps_yoy_pct: number | null; operating_margin_pct: number | null; latest_ocf: number | null; }
 export interface ChartData { dates: string[]; close: number[]; ema20: (number | null)[]; ema50: (number | null)[]; volume: number[]; }
 export interface FilterResult { passed: boolean; failures: string[]; }
-export interface SuggestionDetail extends SuggestionSummary { trading_day: string; reasons: Reasons; plan: Plan; score_breakdown: PillarScore[]; indicators: Indicators; fundamentals: Fundamentals; chart: ChartData; filters: FilterResult; }
+export interface SuggestionDetail extends SuggestionSummary { trading_day: string; decision: Decision; reasons: Reasons; plan: Plan; score_breakdown: PillarScore[]; indicators: Indicators; fundamentals: Fundamentals; chart: ChartData; filters: FilterResult; }
 export interface SuggestionsResponse { run: Run | null; items: SuggestionSummary[]; }
 
 export interface StockRow { symbol: string; close: number; change_1d_pct: number | null; change_1w_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; dist_from_52w_high_pct: number | null; volume_ratio_20d: number | null; avg_turnover_lacs: number | null; }

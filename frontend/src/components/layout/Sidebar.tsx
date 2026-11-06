@@ -3,7 +3,9 @@ import clsx from 'clsx';
 import {
   Activity,
   Briefcase,
+  ClipboardCheck,
   Database,
+  History,
   LogOut,
   SlidersHorizontal,
   TrendingDown,
@@ -24,7 +26,9 @@ const NAV: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/stocks', label: 'Stocks', icon: TrendingUp },
   { to: '/tracker', label: 'Tracker', icon: Briefcase },
   { to: '/holdings', label: 'Holdings', icon: Wallet },
+  { to: '/scorecard', label: 'Scorecard', icon: ClipboardCheck },
   { to: '/losses', label: 'Loss Analysis', icon: TrendingDown },
+  { to: '/backtest', label: 'Backtest', icon: History },
   { to: '/strategies', label: 'Strategies', icon: SlidersHorizontal },
 ];
 

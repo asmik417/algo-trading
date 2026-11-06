@@ -141,8 +141,8 @@ Fixed reason tags (`GET /api/v1/reviews/tags`):
 ## source_pulls
 `(source, day)` unique: status ok / empty / failed, records, error, pulled_at.
 
-## announcements, deals, insider_trades, shareholding, market_context, quarterly_results
-One table per source, each row keyed by symbol (where applicable) and date, stored as fetched plus the normalised columns the API returns (see `EvidencePack`). `quarterly_results` carries `filed_on` so backtests can use point-in-time numbers. Rows are never overwritten; a re-pull inserts only new keys.
+## announcements, deals, insider_trades, shareholding, news_items, market_context, quarterly_results
+One table per source, each row keyed by symbol (where applicable) and date, stored as fetched plus the normalised columns the API returns (see `EvidencePack`). `quarterly_results` carries `filed_on` so backtests can use point-in-time numbers. Rows are never overwritten; a re-pull inserts only new keys. Every source row has `uid` (unique), `pulled_day` and `data_json`; `market_context` is long, one row per `(day, metric)`; `source_pulls` also stores `inserted`. `brain_jobs` (day, status, summary_json, error, timestamps) is what a nightly-brain `job_id` refers to.
 
 ## evidence_packs
 `(symbol, day)` unique; `pack_json` (`EvidencePack`), `created_at`.
@@ -151,7 +151,7 @@ One table per source, each row keyed by symbol (where applicable) and date, stor
 `(symbol, day, profile_id)` unique; `view_json` (`AnalystView`), `audited`, `model`, `created_at`.
 
 ## market_briefs
-`day` unique; `brief_json` (`MarketBrief`), `created_at`.
+`day` unique; `brief_json` (`MarketBrief`), `audited`, `audit_notes_json`, `model`, `created_at`.
 
 ## verdict_log
 `(symbol, day, source, profile_id)` unique; action, direction, level, close, signal, created_at.
