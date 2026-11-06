@@ -37,6 +37,9 @@ import type {
   Trend,
   Verdict,
   WatchlistItem,
+  PickList,
+  CreatePickListBody,
+  UpdatePickListBody,
   WatchlistMiss,
   WatchlistResults,
   WatchlistRunBody,
@@ -827,6 +830,8 @@ interface MockState {
   nextAdhocId: number;
   /** Results of finished watchlist runs, frozen when the run finishes (like rows in the real database). */
   watchlistResults: Map<number, WatchlistItem[]>;
+  pickLists: PickList[];
+  nextPickListId: number;
   job: { runningUntilMs: number; status: JobStatus };
 }
 
@@ -841,6 +846,8 @@ function initialState(): MockState {
         status: 'done',
         kind: 'full',
         symbols: null,
+        list_id: null,
+        list_name: null,
         trading_day: TRADING_DAY,
         progress: { phase: 'done', done: 231, total: 231, current_symbol: null },
         universe_size: 2612,
@@ -857,6 +864,8 @@ function initialState(): MockState {
         status: 'done',
         kind: 'watchlist',
         symbols: ['RELIANCE', 'KPITTECH', 'TITAN', 'NHPC', 'NOTREAL'],
+        list_id: 3,
+        list_name: 'Watch candidates',
         trading_day: TRADING_DAY,
         progress: { phase: 'done', done: 5, total: 5, current_symbol: null },
         universe_size: 5,
@@ -876,6 +885,30 @@ function initialState(): MockState {
     adhoc: [] as { profileId: number; detail: SuggestionDetail }[],
     nextAdhocId: ADHOC_ID_START + 1,
     watchlistResults: new Map<number, WatchlistItem[]>(),
+    pickLists: [
+      {
+        id: 1,
+        name: 'Manager holdings',
+        symbols: ['RELIANCE', 'TCS', 'INFY', 'ITC', 'HDFCBANK'],
+        created_at: '2026-11-03T10:00:00Z',
+        updated_at: '2026-11-03T10:00:00Z',
+      },
+      {
+        id: 2,
+        name: 'Momentum ideas',
+        symbols: ['KPITTECH', 'ANGELONE', 'CDSL', 'TRENT', 'DIXON'],
+        created_at: '2026-11-04T09:00:00Z',
+        updated_at: '2026-11-04T09:00:00Z',
+      },
+      {
+        id: 3,
+        name: 'Watch candidates',
+        symbols: ['RELIANCE', 'KPITTECH', 'TITAN', 'NHPC', 'NOTREAL'],
+        created_at: '2026-11-04T11:55:00Z',
+        updated_at: '2026-11-04T11:55:00Z',
+      },
+    ] as PickList[],
+    nextPickListId: 4,
     job: {
       runningUntilMs: 0,
       status: {
@@ -1076,6 +1109,8 @@ export function startRun(profileId: number): Run {
     status: 'queued',
     kind: 'full',
     symbols: null,
+    list_id: null,
+    list_name: null,
     trading_day: null,
     progress: { phase: 'panel', done: 0, total: 0, current_symbol: null },
     universe_size: null,
@@ -1209,17 +1244,20 @@ function refreshWatchlistRun(run: Run): Run {
 
 export function startWatchlistRun(profileId: number, body: WatchlistRunBody): Run {
   findProfile(profileId);
-  const symbols = [
-    ...new Set((body.symbols ?? []).map((x) => String(x).trim().toUpperCase()).filter(Boolean)),
-  ];
-  if (symbols.length === 0 || symbols.length > MAX_WATCHLIST)
-    fail(400, `Give between 1 and ${MAX_WATCHLIST} symbols (got ${symbols.length})`);
+  const hasList = body.list_id !== undefined && body.list_id !== null;
+  const hasSymbols = body.symbols !== undefined && body.symbols !== null;
+  if (hasList === hasSymbols) fail(400, 'Give exactly one of list_id or symbols');
+  const list = hasList ? findPickList(body.list_id as number) : null;
+  // A list run uses the list's current symbols; `symbols` is still stored so results stay readable later.
+  const symbols = list ? [...list.symbols] : normalizeSymbols(body.symbols ?? []);
   const run: Run = {
     id: state.nextRunId++,
     profile_id: profileId,
     status: 'queued',
     kind: 'watchlist',
     symbols,
+    list_id: list?.id ?? null,
+    list_name: list?.name ?? null,
     trading_day: null,
     progress: { phase: 'panel', done: 0, total: symbols.length, current_symbol: null },
     universe_size: null,
@@ -1248,13 +1286,85 @@ export function getRunResults(runId: number): WatchlistResults {
   return { run, items };
 }
 
-export function listWatchlistRuns(profileId: number, limit = 10): Run[] {
+export function listWatchlistRuns(profileId: number, limit = 10, listId?: number): Run[] {
   findProfile(profileId);
   return state.runs
-    .filter((r) => r.profile_id === profileId && r.kind === 'watchlist')
+    .filter(
+      (r) =>
+        r.profile_id === profileId &&
+        r.kind === 'watchlist' &&
+        (listId === undefined || r.list_id === listId),
+    )
     .map(refreshRun)
     .sort((a, b) => b.id - a.id)
     .slice(0, limit);
+}
+
+// ---------------------------------------------------------------- pick lists (named My Picks lists)
+
+const MAX_LIST_NAME = 60;
+
+/** Upper-cased, de-duplicated, order preserved; 1-50 entries (contract "Pick lists"). */
+function normalizeSymbols(raw: string[]): string[] {
+  const symbols = [...new Set(raw.map((x) => String(x).trim().toUpperCase()).filter(Boolean))];
+  if (symbols.length === 0 || symbols.length > MAX_WATCHLIST)
+    fail(400, `Give between 1 and ${MAX_WATCHLIST} symbols (got ${symbols.length})`);
+  return symbols;
+}
+
+function normalizeName(raw: string | undefined, exceptId: number | null): string {
+  const name = (raw ?? '').trim();
+  if (name.length < 1 || name.length > MAX_LIST_NAME)
+    fail(400, `A list name must be 1-${MAX_LIST_NAME} characters`);
+  if (state.pickLists.some((l) => l.id !== exceptId && l.name.toLowerCase() === name.toLowerCase()))
+    fail(409, `A list named "${name}" already exists`);
+  return name;
+}
+
+function findPickList(id: number): PickList {
+  return state.pickLists.find((l) => l.id === id) ?? fail(404, `Pick list ${id} not found`);
+}
+
+export function listPickLists(): PickList[] {
+  return [...state.pickLists].sort(
+    (a, b) => b.updated_at.localeCompare(a.updated_at) || b.id - a.id,
+  );
+}
+
+export function createPickList(body: CreatePickListBody): PickList {
+  const name = normalizeName(body.name, null);
+  const symbols = normalizeSymbols(body.symbols ?? []);
+  const now = new Date().toISOString();
+  const list: PickList = {
+    id: state.nextPickListId++,
+    name,
+    symbols,
+    created_at: now,
+    updated_at: now,
+  };
+  state.pickLists.push(list);
+  return list;
+}
+
+export function updatePickList(id: number, body: UpdatePickListBody): PickList {
+  const list = findPickList(id);
+  const name = body.name !== undefined ? normalizeName(body.name, id) : list.name;
+  const symbols = body.symbols !== undefined ? normalizeSymbols(body.symbols) : list.symbols;
+  Object.assign(list, { name, symbols, updated_at: new Date().toISOString() });
+  // list_name on runs is "name at read time".
+  state.runs.forEach((r) => {
+    if (r.list_id === id) r.list_name = name;
+  });
+  return list;
+}
+
+export function deletePickList(id: number): void {
+  findPickList(id);
+  state.pickLists = state.pickLists.filter((l) => l.id !== id);
+  // Past runs are kept; they just lose the link.
+  state.runs.forEach((r) => {
+    if (r.list_id === id) Object.assign(r, { list_id: null, list_name: null });
+  });
 }
 
 // ---------------------------------------------------------------- suggestions

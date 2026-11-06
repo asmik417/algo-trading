@@ -1,14 +1,16 @@
-// Copied verbatim from docs/API_CONTRACT.md: the Auth and Watchlist runs snippets and the TypeScript types section.
-// Do not edit by hand.
+// Copied verbatim from docs/API_CONTRACT.md: the Auth, Watchlist runs and Pick lists snippets and the TypeScript
+// types section. Do not edit by hand.
 
 export interface LoginBody { username: string; password: string; }
 export interface Me { username: string; }
 
-export interface WatchlistRunBody { symbols: string[]; }
+// WatchlistRunBody: see "Pick lists" (list_id or symbols, exactly one)
 export interface WatchlistHit extends SuggestionSummary { filters: FilterResult; error: null; }
 export interface WatchlistMiss { id: null; symbol: string; error: string; filters: null; score: null; signal: null; stage: null; price: null; is_tracked: false; position_id: null; }
 export type WatchlistItem = WatchlistHit | WatchlistMiss;
 export interface WatchlistResults { run: Run; items: WatchlistItem[]; }
+
+export interface WatchlistRunBody { list_id?: number; symbols?: string[]; }   // exactly one
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed';
 export type RunKind = 'full' | 'watchlist';
@@ -27,8 +29,11 @@ export type Params = Record<string, number | boolean | string | string[]>;
 
 export interface Profile { id: number; name: string; owner: string; is_active: boolean; params: Params; params_summary: string; created_at: string; updated_at: string; }
 
+export interface PickList { id: number; name: string; symbols: string[]; created_at: string; updated_at: string; }
+export interface CreatePickListBody { name: string; symbols: string[]; }
+export interface UpdatePickListBody { name?: string; symbols?: string[]; }
 export interface RunProgress { phase: string; done: number; total: number; current_symbol: string | null; }
-export interface Run { id: number; profile_id: number; status: RunStatus; kind: RunKind; symbols: string[] | null; trading_day: string | null; progress: RunProgress; universe_size: number | null; scored_size: number | null; passed_size: number | null; error: string | null; started_at: string | null; finished_at: string | null; created_at: string; }
+export interface Run { id: number; profile_id: number; status: RunStatus; kind: RunKind; symbols: string[] | null; list_id: number | null; list_name: string | null; trading_day: string | null; progress: RunProgress; universe_size: number | null; scored_size: number | null; passed_size: number | null; error: string | null; started_at: string | null; finished_at: string | null; created_at: string; }
 
 export type SuggestionSource = 'run' | 'explore' | 'watchlist';
 export interface SuggestionSummary { id: number; source: SuggestionSource; verdict: Verdict; symbol: string; rank: number | null; score: number; stage: string; signal: string; price: number; entry_optimal: number; stop_loss: number; target: number; risk_reward: number; horizon_days: number; planned_exit_date: string; market_cap_bucket: string; sector: string | null; profit_yoy_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; volume_ratio_20d: number | null; is_tracked: boolean; position_id: number | null; }

@@ -14,9 +14,14 @@ export const getRunResults = (runId: number): Promise<WatchlistResults> =>
     ? mockCall(() => mockDb.getRunResults(runId))
     : http.get<WatchlistResults>(`/runs/${runId}/results`).then((r) => r.data);
 
-export const listWatchlistRuns = (profileId: number, limit = 10): Promise<Run[]> =>
+/** Without `listId`: every watchlist run of the profile. With it: only runs of that pick list. */
+export const listWatchlistRuns = (
+  profileId: number,
+  limit = 10,
+  listId?: number,
+): Promise<Run[]> =>
   USE_MOCKS
-    ? mockCall(() => mockDb.listWatchlistRuns(profileId, limit))
+    ? mockCall(() => mockDb.listWatchlistRuns(profileId, limit, listId))
     : http
-        .get<Run[]>(`/profiles/${profileId}/watchlist-runs`, { params: { limit } })
+        .get<Run[]>(`/profiles/${profileId}/watchlist-runs`, { params: { limit, list_id: listId } })
         .then((r) => r.data);
