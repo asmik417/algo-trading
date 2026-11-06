@@ -234,17 +234,20 @@ def corporate_action_date(history: pd.DataFrame) -> str | None:
     return hits.index[-1].date().isoformat() if not hits.empty else None
 
 
-def score_symbol(symbol: str, history: pd.DataFrame, bundle: dict, params: ScreenParams) -> Scored:
+def score_symbol(symbol: str, history: pd.DataFrame, bundle: dict, params: ScreenParams,
+                 require_fundamentals: bool = True) -> Scored:
+    """Score + hard filters for one stock. `require_fundamentals=False` (backtest technical_only mode) drops the
+    has-fundamentals rule; everything else is the same pipeline as a full run."""
     candidate = evaluate(symbol, history, bundle.get("info") or {}, bundle.get("quarterly") or [],
                          bundle.get("cashflow") or [], weights=params.weights)
     s = Scored(candidate=candidate, bundle=bundle, indicators=analysis_service.indicators(history))
     s.failures, s.skipped, s.rules_checked = filter_failures(s, params)
     # Two more rules, always evaluated and listed first when they fail.
     gap_day = corporate_action_date(history)
-    s.rules_checked += 2
+    s.rules_checked += 2 if require_fundamentals else 1
     if gap_day is not None:
         s.failures.insert(0, f"Possible corporate action on {gap_day}, excluded")
-    if not s.has_fundamentals:  # full runs drop these before saving; Explore/watchlist show why
+    if require_fundamentals and not s.has_fundamentals:  # full runs drop these; Explore/watchlist show why
         s.failures.insert(0, NO_FUNDAMENTALS)
     return s
 
