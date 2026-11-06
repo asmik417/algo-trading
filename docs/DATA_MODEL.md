@@ -19,11 +19,19 @@ All timestamps are ISO strings in UTC (`created_at`), all market dates are ISO `
 | status | str | queued, running, done, failed |
 | universe_size, scored_size, passed_size | int | funnel counts |
 | kind | str | `full` or `watchlist` |
+| list_id | FK pick_lists nullable | set null on list delete |
 | symbols_json | text nullable | requested symbols for a watchlist run |
 | item_errors_json | text nullable | `{symbol: error}` for symbols that produced no suggestion row |
 | params_json | text | snapshot of the params used |
 | error | text nullable | |
 | started_at, finished_at, created_at | str | |
+
+## pick_lists
+| column | type | notes |
+|---|---|---|
+| name | str unique (case-insensitive) | e.g. "Manager holdings" |
+| symbols_json | text | ordered list of upper-cased symbols, 1-50 |
+| created_at, updated_at | str | |
 
 ## suggestions
 | column | type | notes |

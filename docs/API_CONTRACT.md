@@ -94,7 +94,7 @@ Run = {
 
 Same engine and same rules as a full run, but only for the symbols the user names. Results are persisted as suggestions with `source: "watchlist"` so they can be tracked, but they never appear in the Algo Suggested tab.
 
-`POST /profiles/{id}/watchlist-runs` body `{ "symbols": ["RELIANCE", "TCS"] }` (1-50 symbols, upper-cased, unknown symbols reported, not fatal) → 202 `Run` with `kind: "watchlist"` and `symbols`.
+`POST /profiles/{id}/watchlist-runs` body `{ "list_id": 3 }` or `{ "symbols": ["RELIANCE", "TCS"] }` (see "Pick lists"; 1-50 symbols, upper-cased, unknown symbols reported, not fatal) → 202 `Run` with `kind: "watchlist"` and `symbols`.
 `GET /runs/{run_id}/results` → `{ "run": Run, "items": WatchlistItem[] }` where items are in the order requested and include stocks that failed the filters.
 `GET /profiles/{id}/watchlist-runs?limit=10` → `Run[]` newest first.
 
@@ -107,12 +107,32 @@ WatchlistItem = WatchlistHit | WatchlistMiss   // see the TS below; a miss carri
 `SuggestionSource` gains `"watchlist"`.
 
 ```ts
-export interface WatchlistRunBody { symbols: string[]; }
+// WatchlistRunBody: see "Pick lists" (list_id or symbols, exactly one)
 export interface WatchlistHit extends SuggestionSummary { filters: FilterResult; error: null; }
 export interface WatchlistMiss { id: null; symbol: string; error: string; filters: null; score: null; signal: null; stage: null; price: null; is_tracked: false; position_id: null; }
 export type WatchlistItem = WatchlistHit | WatchlistMiss;
 export interface WatchlistResults { run: Run; items: WatchlistItem[]; }
 ```
+
+---
+
+## Pick lists (named, saved lists for My Picks)
+
+A pick list is a named set of symbols the user keeps and re-analyses, e.g. "Manager holdings". Lists are **independent of strategies**: the same list can be analysed under any strategy. Names are unique (case-insensitive, trimmed), 1-60 chars. Symbols: 1-50, upper-cased, de-duplicated, order preserved.
+
+`GET /pick-lists` → `PickList[]` ordered by `updated_at` desc.
+`POST /pick-lists` body `{ "name": "Manager holdings", "symbols": ["HEGAM", "AMBER"] }` → 201 `PickList`. 409 on duplicate name.
+`PUT /pick-lists/{id}` body `{ "name"?: string, "symbols"?: string[] }` (merge; rename and/or replace symbols) → `PickList`. 409 on duplicate name, 404 unknown id.
+`DELETE /pick-lists/{id}` → 204. Past runs of that list are kept; their `list_id` becomes null.
+
+Watchlist runs link to a list: `POST /profiles/{id}/watchlist-runs` body becomes `{ "list_id"?: number, "symbols"?: string[] }`. Exactly one of the two must be given (400 otherwise). With `list_id` the run uses the list's **current** symbols and stores `list_id`; the run's `symbols` is still filled so results stay readable after the list changes. `Run` gains `list_id: number | null` and `list_name: string | null` (name at read time; null if the list was deleted). `GET /profiles/{id}/watchlist-runs?limit=10&list_id=3` filters to one list; without `list_id` it returns all watchlist runs of the profile.
+
+```ts
+export interface WatchlistRunBody { list_id?: number; symbols?: string[]; }   // exactly one
+```
+`PickList`, `CreatePickListBody` and `UpdatePickListBody` are declared once in the main TS block.
+
+Frontend behaviour (My Picks): a **list dropdown** shows every list by name, plus "New list…". The chosen list id is kept in `localStorage` (`picks.selectedListId`) so it stays selected across reloads until the user changes it. Selecting a list fills the symbol box with its symbols and shows the latest finished run of that list under the active strategy (`watchlist-runs?list_id=&limit=1`), or the empty state if none. Editing the symbols enables **Save list**; **Analyse** always saves first and then starts the run with `list_id`. The list name is editable inline (pencil next to the name → `PUT`). **Delete list** asks to confirm. The "Previous analyses" dropdown is scoped to the selected list. Analysing an ad-hoc set without saving is no longer offered; the user names the list first (default suggestion: "List <n>").
 
 ---
 
@@ -306,8 +326,11 @@ export type Params = Record<string, number | boolean | string | string[]>;
 
 export interface Profile { id: number; name: string; owner: string; is_active: boolean; params: Params; params_summary: string; created_at: string; updated_at: string; }
 
+export interface PickList { id: number; name: string; symbols: string[]; created_at: string; updated_at: string; }
+export interface CreatePickListBody { name: string; symbols: string[]; }
+export interface UpdatePickListBody { name?: string; symbols?: string[]; }
 export interface RunProgress { phase: string; done: number; total: number; current_symbol: string | null; }
-export interface Run { id: number; profile_id: number; status: RunStatus; kind: RunKind; symbols: string[] | null; trading_day: string | null; progress: RunProgress; universe_size: number | null; scored_size: number | null; passed_size: number | null; error: string | null; started_at: string | null; finished_at: string | null; created_at: string; }
+export interface Run { id: number; profile_id: number; status: RunStatus; kind: RunKind; symbols: string[] | null; list_id: number | null; list_name: string | null; trading_day: string | null; progress: RunProgress; universe_size: number | null; scored_size: number | null; passed_size: number | null; error: string | null; started_at: string | null; finished_at: string | null; created_at: string; }
 
 export type SuggestionSource = 'run' | 'explore' | 'watchlist';
 export interface SuggestionSummary { id: number; source: SuggestionSource; verdict: Verdict; symbol: string; rank: number | null; score: number; stage: string; signal: string; price: number; entry_optimal: number; stop_loss: number; target: number; risk_reward: number; horizon_days: number; planned_exit_date: string; market_cap_bucket: string; sector: string | null; profit_yoy_pct: number | null; change_1m_pct: number | null; change_3m_pct: number | null; volume_ratio_20d: number | null; is_tracked: boolean; position_id: number | null; }
@@ -367,6 +390,8 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
 - 2026-11-05 (guide): single-user login added (see "Auth"); profiles reframed as strategies in the UI; `owner` hidden.
 
 - 2026-11-05 (backend → accepted): `CreateProfileBody.owner` optional; TS updated, backend test exception removed.
+
+- 2026-11-06 (guide): **Pick lists** added (named, saved My Picks lists; `Run.list_id`/`list_name`; `WatchlistRunBody` takes `list_id` or `symbols`). See the "Pick lists" section.
 
 ### Open
 - 2026-11-05 (frontend): **`WatchlistItem` error rows contradict their type.** The prose says an unknown or unscorable symbol comes back with `error` set "and score fields null", but `WatchlistItem extends SuggestionSummary`, where `id`, `score`, `price`, `entry_optimal`, `stop_loss`, `target`, `risk_reward`, `horizon_days`, `stage`, `signal`, `planned_exit_date` are all non-null, and `filters: FilterResult` is required. An unknown symbol also has no persisted suggestion, so there is no real `id`. Proposal: a discriminated union, so neither side has to guess:
