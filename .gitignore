@@ -27,3 +27,6 @@ frontend/.vite/
 .DS_Store
 .vscode/
 .idea/
+
+# Excel exports made by tools/export_picks.py
+exports/
