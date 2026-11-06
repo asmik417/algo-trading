@@ -1,6 +1,5 @@
-"""The nightly brain job (docs/BRAIN_PLAN.md -> Pipeline). Part 1: pull every source for the day and store it
-insert-only, recording a source_pulls status per source. Later steps (point-in-time results use, market brief,
-evidence packs, analyst views, verdict log, scorecard) are added in order. One run at a time; idempotent per day.
+"""The nightly brain job (docs/BRAIN_PLAN.md -> Pipeline): pull every source insert-only (a source_pulls status
+each), then the market brief and an evidence pack per followed stock. One run at a time; idempotent per day.
 """
 import json
 import threading
@@ -15,7 +14,7 @@ from app.db.session import SessionLocal
 from app.engine.data.sources import (SOURCES, announcements, common, deals, global_cues, insider, market, news, results,
                                      shareholding)
 from app.models import BrainJob, PickList, Position, Shareholding, Suggestion, SuggestionRun
-from app.services import market_data, source_service
+from app.services import evidence_service, market_brief_service, market_data, source_service
 
 log = get_logger(__name__)
 
@@ -74,6 +73,38 @@ def pull_source(db, source: str, day: date) -> dict:
     return {"status": status, "records": len(records), "inserted": inserted, "error": error}
 
 
+def build_brief(db, day: date) -> dict:
+    """The market brief step; never raises. Returns {regime, audited} or {error}."""
+    try:
+        brief = market_brief_service.build(db, day.isoformat())
+        row_audited = market_brief_service.is_audited(db, day.isoformat())
+        return {"regime": brief["regime"], "audited": row_audited}
+    except Exception as e:
+        db.rollback()
+        log.exception("Nightly brain: market brief for %s failed", day)
+        return {"error": redact(str(e) or type(e).__name__)[:300]}
+
+
+def build_packs(db, day: date) -> dict:
+    """An evidence pack per followed stock; one failing stock never stops the others."""
+    built, failed = 0, {}
+    try:
+        context = market_brief_service.context(db, day.isoformat())
+    except Exception:
+        log.exception("Nightly brain: market context for %s failed", day)
+        context = None
+    for symbol in followed_symbols(db):
+        try:
+            evidence_service.build(db, symbol, day.isoformat(), fetch_missing=True, brief_context=context)
+            built += 1
+        except Exception as e:
+            db.rollback()
+            failed[symbol] = redact(str(e) or type(e).__name__)[:200]
+    if failed:
+        log.info("Nightly brain: no evidence pack for %s", failed)
+    return {"packs_built": built, "packs_failed": failed}
+
+
 def start_job(day: date | None = None) -> BrainJob | None:
     """Create the job row; None if a run is already going."""
     if is_running():
@@ -101,11 +132,14 @@ def run(job_id: int, day: date | None = None) -> dict | None:
             job.day, job.status, job.started_at = day.isoformat(), "running", utc_now_iso()
             db.commit()
             try:
-                summary = {"sources": {s: pull_source(db, s, day) for s in SOURCES},
-                           "packs_built": 0, "views_built": 0, "views_failed": 0}
+                summary = {"sources": {s: pull_source(db, s, day) for s in SOURCES}}
+                summary["brief"] = build_brief(db, day)
+                summary.update(build_packs(db, day))
+                summary.update({"views_built": 0, "views_failed": 0})
                 job.summary_json, job.status = json.dumps(summary), "done"
-                log.info("Nightly brain %s for %s: %s", job_id, day,
-                         {s: (v["status"], v["records"]) for s, v in summary["sources"].items()})
+                log.info("Nightly brain %s for %s: %s; brief %s; %d packs (%d failed)", job_id, day,
+                         {s: (v["status"], v["records"]) for s, v in summary["sources"].items()},
+                         summary["brief"], summary["packs_built"], len(summary["packs_failed"]))
                 return summary
             except Exception as e:
                 log.exception("Nightly brain %s failed", job_id)

@@ -120,6 +120,8 @@ def test_market_flows_and_indices_only_at_the_close(nse):
     rows = market.fetch(DAY, use_cache=False)
     metrics = {r["key"]: r["value"] for r in rows}
     assert metrics["index:NIFTY 50:close"] == 24868.2 and metrics["vix"] == 17.18
+    assert metrics["index:NIFTY 50:pct_1w"] == round((24868.2 / 23053.1 - 1) * 100, 2)      # from oneWeekAgoVal
+    assert metrics["index:NIFTY 50:pct_1m"] == round((24868.2 / 22776.1 - 1) * 100, 2)
     assert metrics["advances"] > 0 and metrics["advance_decline"] == round(metrics["advances"] / metrics["declines"], 3)
     closing["timestamp"] = "05-Nov-2026 14:00"
     nse["overrides"]["allIndices"] = json.dumps(closing)

@@ -34,6 +34,15 @@ def no_network_fundamentals(tmp_path, monkeypatch):
 
     monkeypatch.setattr(market_data, "_nifty_closes", lambda: None)
     monkeypatch.setattr(market_data, "nifty_closes_range", lambda start, end: None)
+    # Index histories (yfinance) and the LLM: unavailable unless a test fakes them.
+    from app.engine.data import index_history
+
+    def no_index_download(ticker):
+        raise RuntimeError("network disabled in tests")
+
+    monkeypatch.setattr(index_history, "_download", no_index_download)
+    index_history._cache.clear()
+    monkeypatch.setattr(engine_config, "ANTHROPIC_API_KEY", "")
 
 
 @pytest.fixture()

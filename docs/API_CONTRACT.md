@@ -580,3 +580,37 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
     - **`Ownership.fii_pct`/`dii_pct` are not in NSE's shareholding master**, which gives only promoter and public. They stay `null` (unavailable) unless the guide wants the per-filing XBRL parsed.
     - **Moneycontrol RSS has been frozen since April 2024.** News uses the ET Markets feeds plus Google News per followed company.
     - **Quarterly results** come from NSE "Integrated Filing – Financials" XBRL, with `filed_on` taken from the broadcast date. EBITDA = PBT + finance costs + depreciation − other income. Banks report revenue as interest earned.
+- 2026-11-06 (backend), **the brain, part 2 (evidence packs and market brief)**, as built:
+  - **`MarketBrief` needs `audited: boolean`.** The paragraph and stance are audited like the analyst view: one re-ask listing the offending numbers. If the second answer also fails, or the model is unavailable, the brief falls back to deterministic text: the facts as the paragraph, plus a fixed stance per regime. The UI cannot tell this text from the model's without the flag. It is stored now (`market_briefs.audited`, `audit_notes_json`, `model`), but the response has no field for it yet.
+  - **Units and definitions not stated in the contract:**
+    - `QuarterRow.period` is the quarter-end date (`YYYY-MM-DD`).
+    - `QuarterRow.revenue`, `ebitda` and `net_profit` are in ₹ crore; `eps` is in ₹.
+    - `price.change_*` cover 5, 21 and 63 sessions.
+    - `vs_nifty_1m_pct` and `vs_sector_1m_pct` are percentage points: the stock's 1-month change minus the index's.
+    - `dist_52w_high_pct` is measured against the highest close of the last 252 sessions.
+    - `delivery_pct_now` is the day's delivery %; `delivery_pct_prev` is the average of the 20 sessions before it.
+    - Windows: deals cover 30 days and headlines 7 days. Events are the announcements of the last 30 days, plus calendar events in the next 30 days that were already known on the day.
+  - **`unavailable`** holds section names (`quarters`, `ownership`, `deals`, `events`, `headlines`, `rules_verdict`, `plan`) plus dotted names for single missing fields (`price.vs_sector_1m_pct`, `ownership.fii_pct`, `market.vix`, `deals.insider`). Please confirm the dotted form.
+  - **`market.sector_index`** maps Yahoo's sector and industry to an NSE sector index (table in `services/evidence_service.py`). For example, Ramkrishna Forgings, which Yahoo lists under Industrials, maps to NIFTY INFRASTRUCTURE.
+  - **Market context sources:**
+    - Index levels and their 1-week and 1-month changes come from NSE's end-of-day snapshot when it was pulled after 15:30.
+    - Otherwise they come from Yahoo, which covers 18 indices. Nifty Smallcap and Midcap 150 are NSE-only.
+    - `advance_decline` is computed from the whole NSE bhavcopy (every stock that traded on both sessions), so it is available for any past day. NSE's Nifty 500 count is kept in `market_context` but is not used.
+  - **Regime reading:**
+    - "FII net selling over ₹2,000 cr for 3 sessions" is read as each of the last 3 sessions below −₹2,000 cr.
+    - That needs all 3 sessions pulled. NSE serves flows for the latest day only, so it takes 3 consecutive nightly runs.
+    - An input that is unavailable never triggers a rule, and risk_on needs all three of its inputs.
+    - Boundaries are strict: VIX at exactly 15 is not risk_on, and exactly 20 is not risk_off.
+  - **`rules_verdict` / `plan` in a pack:**
+    - The source is the stock's stored suggestion for that day, the active strategy's first.
+    - With no stored suggestion, it is the active strategy run on the history up to that day, and that result is not saved.
+    - Part 3's per-profile analyst view may want the profile's own verdict instead.
+  - **`POST /stocks/{symbol}/evidence`:**
+    - Rebuilds and replaces the pack for the latest day.
+    - The first build for a stock with fewer than 4 stored quarters fetches its last 5 filings from NSE, about 6 s at NSE's pace, so a never-seen stock comes close to the 10 s budget. Afterwards a build takes 0–2 s.
+    - On the latest day only, it fetches Google News for the stock when no headlines are stored.
+  - **Followed set** for the nightly packs: pick lists, the latest finished full run of each profile (so "the day's suggestions" is the current Algo Suggested list), and open or due positions. Please confirm.
+  - **DATA_MODEL:**
+    - `evidence_packs`: `(symbol, day)` unique.
+    - `market_briefs`: gains `audited`, `audit_notes_json` and `model`.
+    - The nightly summary gains `brief` (`{regime, audited}`) and `packs_failed` (`{symbol: why}`).

@@ -1,13 +1,16 @@
-"""Stock endpoints for Explore: the searchable NSE universe, one stock's detail, and on-demand analysis.
-Thin router: logic lives in services/explore_service.py and services/suggestion_service.py.
+"""Stock endpoints for Explore: the searchable NSE universe, one stock's detail, on-demand analysis and evidence packs.
+Thin router: logic lives in services/explore_service.py, suggestion_service.py and evidence_service.py.
 """
-from fastapi import APIRouter, Depends, Query
+from datetime import date
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.schemas.brain import EvidencePack
 from app.schemas.stock import StockDetail, StocksResponse
 from app.schemas.suggestion import SuggestionDetail
-from app.services import explore_service, suggestion_service
+from app.services import evidence_service, explore_service, suggestion_service
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -26,3 +29,13 @@ def stock_detail(symbol: str):
 @router.post("/{symbol}/analyze", response_model=SuggestionDetail)
 def analyze(symbol: str, profile_id: int = Query(...), db: Session = Depends(get_db)):
     return suggestion_service.analyze_symbol(db, symbol, profile_id)
+
+
+@router.get("/{symbol}/evidence", response_model=EvidencePack)
+def evidence(symbol: str, day: date | None = None, db: Session = Depends(get_db)):
+    return evidence_service.get(db, symbol, day)
+
+
+@router.post("/{symbol}/evidence", response_model=EvidencePack, status_code=status.HTTP_201_CREATED)
+def build_evidence(symbol: str, db: Session = Depends(get_db)):
+    return evidence_service.build_now(db, symbol)

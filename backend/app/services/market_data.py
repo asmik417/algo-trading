@@ -96,6 +96,7 @@ def get_panel() -> pd.DataFrame:
             _panel = panel
             _panel_day = last.date().isoformat() if last is not None else None
             _histories = {}
+            _breadth.clear()
             log.info("Market panel ready: %d rows, %d symbols, last day %s, %.0fs",
                      len(panel), panel["symbol"].nunique() if not panel.empty else 0, _panel_day,
                      time.monotonic() - started)
@@ -113,6 +114,7 @@ def set_panel(panel: pd.DataFrame) -> None:
         last = nse_universe.latest_trading_day(panel)
         _panel_day = last.date().isoformat() if last is not None else None
         _histories = {}
+        _breadth.clear()
         _latest_day = (_panel_day, time.monotonic())
 
 
@@ -260,3 +262,29 @@ def nifty_change_pct(from_date: str | date, to_date: str | date | None = None) -
     if base.empty or end.empty or not base.iloc[-1]:
         return None
     return round((float(end.iloc[-1]) / float(base.iloc[-1]) - 1) * 100, 2)
+
+
+_breadth: dict[str, tuple[int, int] | None] = {}
+
+
+def breadth(day: str | date) -> tuple[int, int] | None:
+    """(advances, declines) across every NSE equity that traded on `day` and the session before, from the
+    bhavcopy panel; None when the panel does not have both sessions."""
+    key = str(day)
+    with _lock:
+        if key in _breadth:
+            return _breadth[key]
+    panel = get_panel()
+    result = None
+    if panel is not None and not panel.empty:
+        dates = sorted(panel["date"].unique())
+        at = pd.Timestamp(day)
+        if at in dates and dates.index(at) > 0:
+            prev = dates[dates.index(at) - 1]
+            now = panel.loc[panel["date"] == at, ["symbol", "close"]].set_index("symbol")["close"]
+            before = panel.loc[panel["date"] == prev, ["symbol", "close"]].set_index("symbol")["close"]
+            both = now.to_frame("now").join(before.to_frame("before"), how="inner")
+            result = (int((both["now"] > both["before"]).sum()), int((both["now"] < both["before"]).sum()))
+    with _lock:
+        _breadth[key] = result
+    return result

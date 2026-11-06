@@ -2,6 +2,7 @@
 Import models from here: `from app.models import Profile, Position`.
 """
 from app.models.backtest import Backtest, BacktestTrade
+from app.models.brain import EvidencePackRow, MarketBriefRow
 from app.models.meta import AppMeta
 from app.models.pick_list import PickList
 from app.models.position import Position, PositionEvent, PositionMark
@@ -16,7 +17,9 @@ __all__ = [
     "AppMeta",
     "BrainJob",
     "Deal",
+    "EvidencePackRow",
     "InsiderTrade",
+    "MarketBriefRow",
     "MarketContextRow",
     "NewsItem",
     "QuarterlyResult",

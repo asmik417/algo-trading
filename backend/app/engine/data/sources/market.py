@@ -1,5 +1,5 @@
-"""Market context for a day from NSE: FII/DII cash flows (₹ crore) and index closes with India VIX and Nifty 500
-advance/decline. Both NSE endpoints are live-only; a reading is accepted only when NSE's own date is `day` (and,
+"""Market context for a day from NSE: FII/DII cash flows (₹ crore) and index closes (with 1-day, 1-week and 1-month
+changes), India VIX and Nifty 500 advance/decline. Both NSE endpoints are live-only; a reading is accepted only when NSE's own date is `day` (and,
 for indices, the timestamp is after the 15:30 close), so an intraday number is never stored as a close.
 """
 from datetime import date, datetime
@@ -48,6 +48,11 @@ def indices(day: date) -> list[dict]:
             continue
         out.append(_metric(day, f"index:{name}:close", num(row.get("last")), "points"))
         out.append(_metric(day, f"index:{name}:pct_1d", num(row.get("percentChange")), "%"))
+        last = num(row.get("last"))
+        for span, field in (("pct_1w", "oneWeekAgoVal"), ("pct_1m", "oneMonthAgoVal")):
+            base = num(row.get(field))
+            if last is not None and base:
+                out.append(_metric(day, f"index:{name}:{span}", round((last / base - 1) * 100, 2), "%"))
         if name == BREADTH_INDEX:
             adv, dec = num(row.get("advances")), num(row.get("declines"))
             out.append(_metric(day, "advances", adv, "stocks"))

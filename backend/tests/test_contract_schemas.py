@@ -9,7 +9,7 @@ import pytest
 from app.engine.params import CAP_BUCKETS
 from app.engine.scoring import signal as engine_signal
 from app.engine.scoring import stage as engine_stage
-from app.schemas import auth, backtest, health, job, pick_list, position, profile, review, run, stock, suggestion
+from app.schemas import auth, backtest, brain, health, job, pick_list, position, profile, review, run, stock, suggestion
 
 CONTRACT = Path(__file__).resolve().parents[2] / "docs" / "API_CONTRACT.md"
 
@@ -65,7 +65,18 @@ MODELS = {
     "BacktestResults": backtest.BacktestResults,
     "WatchlistMiss": suggestion.WatchlistMiss,
     "WatchlistResults": suggestion.WatchlistResults,
+    "QuarterRow": brain.QuarterRow,
+    "Ownership": brain.Ownership,
+    "DealRow": brain.DealRow,
+    "EventRow": brain.EventRow,
+    "Headline": brain.Headline,
+    "MarketContext": brain.MarketContext,
+    "EvidencePack": brain.EvidencePack,
+    "MarketBrief": brain.MarketBrief,
 }
+
+# Brain types built in part 3 (analyst view, verdict log, scorecard); remove each as its schema lands.
+PENDING_SCHEMAS = {"AnalystView", "LoggedVerdict", "ScorecardRow", "Scorecard"}
 
 
 # Request bodies: every non-optional contract field must be required by the schema.
@@ -122,7 +133,7 @@ TS = _ts_interfaces()
 
 
 def test_every_contract_interface_has_a_schema():
-    mapped = set(MODELS) | set(REQUEST_MODELS)
+    mapped = set(MODELS) | set(REQUEST_MODELS) | PENDING_SCHEMAS
     assert set(TS) == mapped, f"unmapped: {set(TS) ^ mapped}"
 
 

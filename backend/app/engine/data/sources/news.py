@@ -44,6 +44,14 @@ def parse_rss(xml_text: str, default_source: str) -> list[dict]:
     return items
 
 
+def company_items(symbol: str, company: str | None, day: date) -> list[dict]:
+    """Google News headlines for one company over the 7 days up to `day`. Raises SourceUnavailable."""
+    start = (day - timedelta(days=COMPANY_WINDOW_DAYS - 1)).isoformat()
+    items = parse_rss(WEB.get(google_news_url(company or symbol)).text, "Google News")
+    return [{**i, "key": f"{symbol}:{i['url']}", "symbol": symbol} for i in items
+            if start <= i["date"] <= day.isoformat()]
+
+
 def _fetch(day: date, companies: dict[str, str] | None = None) -> list[dict]:
     out, problems = [], []
     for name, url in MARKET_FEEDS.items():
@@ -52,12 +60,9 @@ def _fetch(day: date, companies: dict[str, str] | None = None) -> list[dict]:
             out += [{**i, "key": i["url"], "symbol": None} for i in items if i["date"] == day.isoformat()]
         except SourceUnavailable as e:
             problems.append(f"{name}: {e}")
-    start = (day - timedelta(days=COMPANY_WINDOW_DAYS - 1)).isoformat()
     for symbol, company in (companies or {}).items():
         try:
-            items = parse_rss(WEB.get(google_news_url(company or symbol)).text, "Google News")
-            out += [{**i, "key": f"{symbol}:{i['url']}", "symbol": symbol} for i in items
-                    if start <= i["date"] <= day.isoformat()]
+            out += company_items(symbol, company, day)
         except SourceUnavailable as e:
             problems.append(f"{symbol}: {e}")
     if not out and problems:
