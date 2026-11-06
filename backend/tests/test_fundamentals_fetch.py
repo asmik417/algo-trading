@@ -189,3 +189,14 @@ def test_refetch_empty_fundamentals_script():
     assert counts == {"cached": 4, "empty": 3, "recovered": 1, "still_empty": 2, "rate_limited": 1}
     assert sorted(os.listdir(folder)) == ["BACK.pkl", "GOOD.pkl"]       # empties never stay cached
     assert mod.refetch_day("1999-01-01")["cached"] == 0
+
+
+def test_yfinance_404_stub_counts_as_empty(yahoo):
+    stub = {"trailingPegRatio": None}                       # what yfinance returns for "Quote not found"
+    assert not fetcher.has_real_info(stub) and not fetcher.has_real_info({}) and fetcher.has_real_info(INFO)
+    assert not suggestion_service.has_info({"info": stub})
+    FakeTicker.script = [stub]
+    b = real_fetch("GONE")
+    assert (b["ok"], b["info"], b["rate_limited"]) == (False, {}, False) and FakeTicker.calls == ["info"]  # no retry
+    with pytest.raises(ValueError):
+        suggestion_service.save_fundamentals("2026-11-05", "GONE", {"info": stub})  # never cached

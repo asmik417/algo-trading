@@ -43,7 +43,8 @@ def _fundamentals_path(trading_day: str, symbol: str) -> str:
 
 
 def has_info(bundle: dict | None) -> bool:
-    return bool(bundle and bundle.get("info"))
+    """True when the bundle's info holds real data (not empty, not yfinance's 404 stub)."""
+    return bool(bundle) and fetcher.has_real_info(bundle.get("info"))
 
 
 def load_fundamentals(trading_day: str, symbol: str, force_refetch: bool = False, limiter=None) -> dict:

@@ -154,6 +154,15 @@ _cooldown_until = 0.0
 _sleep = time.sleep  # replaced in tests
 
 
+# For an unknown symbol (HTTP 404 "Quote not found") yfinance returns a stub such as {"trailingPegRatio": None}
+# instead of nothing, so "non-empty" is not enough: info must hold a real value outside these keys.
+STUB_INFO_KEYS = frozenset({"trailingPegRatio"})
+
+
+def has_real_info(info: dict | None) -> bool:
+    return bool(info) and any(v is not None for k, v in info.items() if k not in STUB_INFO_KEYS)
+
+
 def is_rate_limit(exc: BaseException) -> bool:
     if isinstance(exc, YFRateLimitError):
         return True
@@ -175,8 +184,9 @@ def _fetch_once(nse_sym: str) -> tuple[dict, Exception | None]:
         bundle["info"] = dict(ticker.info or {})
     except Exception as e:
         return bundle, e
-    if not bundle["info"]:
-        return bundle, None  # Yahoo has nothing for this symbol: genuinely empty, not an error
+    if not has_real_info(bundle["info"]):
+        bundle["info"] = {}
+        return bundle, None  # Yahoo has nothing for this symbol (or a 404 stub): genuinely empty, not an error
     for key, load in (("quarterly", lambda: _parse_quarterly(ticker.quarterly_financials)),
                       ("cashflow", lambda: _parse_cashflow(ticker.cashflow))):
         try:
