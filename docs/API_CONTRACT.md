@@ -638,7 +638,7 @@ export interface JobStatus { brain: BrainStatus | null; running: boolean; last_d
   - **What the analyst is given:**
     - The pack, with `rules_verdict` and `plan` replaced by the profile's own.
     - `strategy` (the profile's name), `is_holding` and `market_regime` (from the day's brief).
-    - A `derived` block computed by code, so the model never has to compute: latest-quarter YoY and QoQ for revenue, EBITDA and net profit; margin change in points; close vs entry, stop and target in %; and, for a holding, entry price, return so far, target, stop and exit date.
+    - A `derived` block computed by code, so the model never has to compute: latest-quarter YoY and QoQ for revenue, EBITDA and net profit; margin change in points; close vs the entry, upside to the target and downside to the stop in %; and, for a holding, entry price, return so far, target, stop and exit date.
     - URLs are stripped, because their digits would pollute the audit.
     - A stock with an open or due position under that profile gets `add / hold / trim / exit`; any other stock gets `buy / watch / avoid`. The JSON schema enforces this.
   - **Web search:**

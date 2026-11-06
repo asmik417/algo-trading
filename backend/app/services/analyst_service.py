@@ -63,9 +63,9 @@ def derived(pack: dict, plan: dict | None, position: Position | None) -> dict:
             out["latest_quarter_margin_change_pts_yoy"] = round(latest["margin_pct"] - year_ago["margin_pct"], 2)
     close = (pack.get("price") or {}).get("close")
     if plan and close:
-        out["close_vs_entry_optimal_pct"] = _pct(close, plan.get("entry_optimal"))
-        out["close_vs_stop_loss_pct"] = _pct(close, plan.get("stop_loss"))
-        out["close_vs_target_pct"] = _pct(close, plan.get("target"))
+        out["close_vs_entry_optimal_pct"] = _pct(close, plan.get("entry_optimal"))   # + means above the entry
+        out["upside_to_target_pct"] = _pct(plan.get("target"), close)
+        out["downside_to_stop_pct"] = _pct(plan.get("stop_loss"), close)            # negative: the drop to the stop
     if position is not None and close:
         out["holding"] = {"opened_on": position.opened_on, "entry_price": position.entry_price,
                           "return_pct": _pct(close, position.entry_price), "target": position.target,
