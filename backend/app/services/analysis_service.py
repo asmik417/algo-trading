@@ -283,8 +283,10 @@ def summary(row: Suggestion, lookup: tuple[dict[int, int], dict[str, int]]) -> d
     payload = json.loads(row.payload_json or "{}")
     by_suggestion, open_by_symbol = lookup
     position_id = by_suggestion.get(row.id) or open_by_symbol.get(row.symbol)
+    verdict = _verdict_of(row, payload)
     return {
-        "id": row.id, "source": row.source, "verdict": _verdict_of(row, payload), "symbol": row.symbol,
+        "id": row.id, "source": row.source, "verdict": verdict,
+        "headline": decision_service.headline_for(row, payload, verdict), "symbol": row.symbol,
         "rank": row.rank, "score": round(row.score, 1),
         "stage": row.stage, "signal": row.signal, "price": row.price, "entry_optimal": row.entry_optimal,
         "stop_loss": row.stop_loss, "target": row.target, "risk_reward": row.risk_reward,
@@ -319,4 +321,12 @@ def build_detail(db: Session, row: Suggestion) -> dict:
         "filters": payload.get("filters", {"passed": True, "failures": []}),
     })
     out["decision"] = decision_service.build(db, row, payload, out["verdict"], allow_llm=True)
+    out["analyst"] = analyst_view_of(db, row)
     return out
+
+
+def analyst_view_of(db: Session, row: Suggestion) -> dict | None:
+    """The analyst view for the row's stock, trading day and profile, when one has been built."""
+    from app.services import analyst_service  # late import: analyst_service imports evidence_service
+
+    return analyst_service.view_for(db, row.symbol, row.trading_day, row.profile_id)

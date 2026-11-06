@@ -11,6 +11,11 @@ FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 
 # Model that narrates computed numbers (reasons text); never decides a score, price or date.
 NARRATION_MODEL = os.getenv("NARRATION_MODEL", "claude-opus-5-5")
+# The analyst view (docs/API_CONTRACT.md -> Analyst view): Opus 5.5, thinking always on, depth set by effort.
+ANALYST_MODEL = os.getenv("ANALYST_MODEL", "claude-opus-5-5")
+ANALYST_EFFORT = os.getenv("ANALYST_EFFORT", "medium")
+# Nightly cap on new analyst views (each is a paid model call; cached views cost nothing).
+ANALYST_MAX_VIEWS_PER_NIGHT = int(os.getenv("ANALYST_MAX_VIEWS_PER_NIGHT", "60"))
 
 # Full Nifty 50 universe — system scans all and surfaces best signals
 WATCHLIST = [

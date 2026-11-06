@@ -309,7 +309,7 @@ def build(db: Session, day: str, use_llm: bool = True) -> dict:
     if row is not None:
         old = json.loads(row.brief_json)
         if old.get("facts") == core["facts"] and old.get("regime") == core["regime"] and (row.audited or not use_llm):
-            return old
+            return _brief_of(row)
     text = write_text(core["facts"], core["regime"]) if use_llm else {
         "paragraph": " ".join(f for f in core["facts"] if not f.startswith(("Regime:", "Not available")))[:2000],
         "stance": FALLBACK_STANCE[core["regime"]], "audited": False, "notes": ["model not used"], "model": None}
@@ -322,7 +322,16 @@ def build(db: Session, day: str, use_llm: bool = True) -> dict:
     db.commit()
     if text["notes"]:
         log.info("Market brief %s: %s", day, "; ".join(text["notes"]))
-    return brief
+    return _brief_of(row)
+
+
+DETERMINISTIC = "deterministic"   # MarketBrief.model when the text is the fallback, not a model's
+
+
+def _brief_of(row: MarketBriefRow) -> dict:
+    """The stored brief plus its audit fields (kept in their own columns, so older rows get them too)."""
+    return {**json.loads(row.brief_json), "audited": bool(row.audited),
+            "audit_notes": json.loads(row.audit_notes_json or "[]"), "model": row.model or DETERMINISTIC}
 
 
 def get(db: Session, day: date | None = None) -> dict:
@@ -331,12 +340,12 @@ def get(db: Session, day: date | None = None) -> dict:
     row = db.scalar(q.limit(1))
     if row is None:
         raise NotFound(f"No market brief for {day.isoformat()}." if day else "No market brief has been built yet.")
-    return json.loads(row.brief_json)
+    return _brief_of(row)
 
 
 def recent(db: Session, limit: int = 10) -> list[dict]:
     rows = db.scalars(select(MarketBriefRow).order_by(MarketBriefRow.day.desc()).limit(limit))
-    return [json.loads(r.brief_json) for r in rows]
+    return [_brief_of(r) for r in rows]
 
 
 def is_audited(db: Session, day: str) -> bool:

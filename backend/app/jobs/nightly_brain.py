@@ -1,5 +1,5 @@
-"""The nightly brain job (docs/BRAIN_PLAN.md -> Pipeline): pull every source insert-only (a source_pulls status
-each), then the market brief and an evidence pack per followed stock. One run at a time; idempotent per day.
+"""The nightly brain job (docs/BRAIN_PLAN.md -> Pipeline): pull sources, market brief, an evidence pack and an
+analyst view per followed stock, then log verdicts and mark old ones. One run at a time; idempotent per day.
 """
 import json
 import threading
@@ -14,7 +14,9 @@ from app.db.session import SessionLocal
 from app.engine.data.sources import (SOURCES, announcements, common, deals, global_cues, insider, market, news, results,
                                      shareholding)
 from app.models import BrainJob, PickList, Position, Shareholding, Suggestion, SuggestionRun
-from app.services import evidence_service, market_brief_service, market_data, source_service
+from app.engine import config as engine_config
+from app.services import (analyst_service, evidence_service, market_brief_service, market_data, profile_service,
+                          scorecard_service, source_service)
 
 log = get_logger(__name__)
 
@@ -87,7 +89,7 @@ def build_brief(db, day: date) -> dict:
 
 def build_packs(db, day: date) -> dict:
     """An evidence pack per followed stock; one failing stock never stops the others."""
-    built, failed = 0, {}
+    built, failed, packed = 0, {}, []
     try:
         context = market_brief_service.context(db, day.isoformat())
     except Exception:
@@ -97,12 +99,52 @@ def build_packs(db, day: date) -> dict:
         try:
             evidence_service.build(db, symbol, day.isoformat(), fetch_missing=True, brief_context=context)
             built += 1
+            packed.append(symbol)
         except Exception as e:
             db.rollback()
             failed[symbol] = redact(str(e) or type(e).__name__)[:200]
     if failed:
         log.info("Nightly brain: no evidence pack for %s", failed)
-    return {"packs_built": built, "packs_failed": failed}
+    return {"packs_built": built, "packs_failed": failed, "packed": packed}
+
+
+def build_views(db, day: date, symbols: list[str]) -> dict:
+    """An analyst view per packed stock under the active strategy (cached views cost nothing), at most
+    ANALYST_MAX_VIEWS_PER_NIGHT new ones. A failing view never stops the others."""
+    built, failed, cost, new_calls = 0, {}, 0.0, 0
+    try:
+        profile_id = profile_service.get_active(db).id
+    except Exception:
+        return {"views_built": 0, "views_failed": 0, "views_failures": {"*": "no active strategy"}, "views_cost_usd": 0.0}
+    for symbol in symbols:
+        if analyst_service.view_for(db, symbol, day.isoformat(), profile_id):
+            built += 1
+            continue
+        if new_calls >= engine_config.ANALYST_MAX_VIEWS_PER_NIGHT:
+            failed[symbol] = "skipped: nightly limit reached"
+            continue
+        new_calls += 1
+        try:
+            view = analyst_service.analyze(db, symbol, day.isoformat(), profile_id)
+            built += 1
+            cost += analyst_service.cost_of(db, view["id"])[0] or 0.0
+        except Exception as e:
+            db.rollback()
+            failed[symbol] = redact(str(e) or type(e).__name__)[:200]
+    return {"views_built": built, "views_failed": len(failed), "views_failures": failed,
+            "views_cost_usd": round(cost, 4)}
+
+
+def score(db) -> dict:
+    """Log every new rules verdict, then mark logged verdicts that have reached 20/40/60 sessions."""
+    try:
+        logged = scorecard_service.log_rules_verdicts(db)
+        marks = scorecard_service.mark_all(db)
+        return {"verdicts_logged": logged, "marks_added": marks}
+    except Exception as e:
+        db.rollback()
+        log.exception("Nightly brain: scorecard step failed")
+        return {"verdicts_logged": 0, "marks_added": 0, "score_error": redact(str(e))[:200]}
 
 
 def start_job(day: date | None = None) -> BrainJob | None:
@@ -135,11 +177,15 @@ def run(job_id: int, day: date | None = None) -> dict | None:
                 summary = {"sources": {s: pull_source(db, s, day) for s in SOURCES}}
                 summary["brief"] = build_brief(db, day)
                 summary.update(build_packs(db, day))
-                summary.update({"views_built": 0, "views_failed": 0})
+                summary.update(build_views(db, day, summary.pop("packed", [])))
+                summary.update(score(db))
                 job.summary_json, job.status = json.dumps(summary), "done"
-                log.info("Nightly brain %s for %s: %s; brief %s; %d packs (%d failed)", job_id, day,
+                log.info("Nightly brain %s for %s: %s; brief %s; %d packs (%d failed); %d views (%d failed, $%s); "
+                         "%d verdicts logged, %d marks", job_id, day,
                          {s: (v["status"], v["records"]) for s, v in summary["sources"].items()},
-                         summary["brief"], summary["packs_built"], len(summary["packs_failed"]))
+                         summary["brief"], summary["packs_built"], len(summary["packs_failed"]), summary["views_built"],
+                         summary["views_failed"], summary["views_cost_usd"], summary["verdicts_logged"],
+                         summary["marks_added"])
                 return summary
             except Exception as e:
                 log.exception("Nightly brain %s failed", job_id)

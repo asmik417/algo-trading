@@ -4,7 +4,7 @@ Add each new resource router here and nowhere else; anything not in PUBLIC requi
 from fastapi import APIRouter, Depends
 
 from app.api.v1 import (auth, backtests, health, jobs, market, pick_lists, positions, profiles, reviews, runs,
-                        stocks, suggestions)
+                        scorecard, stocks, suggestions)
 from app.api.v1.deps import require_session
 
 api_router = APIRouter()
@@ -15,5 +15,6 @@ for public in (health.router, auth.router):
 
 # Everything else: 401 {"detail": "Not authenticated"} without a valid session cookie.
 for protected in (profiles.router, runs.router, suggestions.router, stocks.router, positions.router,
-                  reviews.router, jobs.router, pick_lists.router, backtests.router, market.router):
+                  reviews.router, jobs.router, pick_lists.router, backtests.router, market.router,
+                  scorecard.router):
     api_router.include_router(protected, dependencies=[Depends(require_session)])

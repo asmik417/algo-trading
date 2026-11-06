@@ -342,6 +342,15 @@ def narrative(db: Session, row: Suggestion, head: str, finds: list[dict], expect
 
 # --- assembly ----------------------------------------------------------------------------------------------------------
 
+def headline_for(row: Suggestion, payload: dict, verdict: dict) -> str:
+    """Just the headline (SuggestionSummary.headline, rebuilt on read): no confidence lookup, no narrative."""
+    ctx = context(row, payload)
+    failures = list(verdict["rules"]["failures"])
+    finds = findings(verdict["overall"], failures, json.loads(row.positives_json or "[]"), ctx)
+    return headline(verdict["overall"], verdict["chart"]["label"], verdict["chart"]["trend"], finds,
+                    [rule_finding(f, ctx) for f in failures], ctx)
+
+
 def build(db: Session, row: Suggestion, payload: dict, verdict: dict, allow_llm: bool = False) -> dict:
     ctx = context(row, payload)
     overall, trend, label = verdict["overall"], verdict["chart"]["trend"], verdict["chart"]["label"]

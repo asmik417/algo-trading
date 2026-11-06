@@ -2,7 +2,10 @@
 Environment is set before any app module is imported, so the real data/trade_assistant.db and .env login are never used.
 """
 import os
+import sys
 import tempfile
+
+sys.path.insert(0, os.path.dirname(__file__))  # lets a test module share another's fixtures (test_brain's fake market)
 
 _TMP_DIR = tempfile.mkdtemp(prefix="trade_assistant_tests_")
 os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_TMP_DIR, 'test.db')}"

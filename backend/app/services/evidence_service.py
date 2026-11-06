@@ -241,17 +241,24 @@ def _pulled_ok(db: Session, source: str, start: str, day: str) -> bool:
                      .limit(1)) is not None
 
 
-def rules_section(db: Session, symbol: str, day: str, hist: pd.DataFrame) -> tuple[dict | None, dict | None, dict | None]:
-    """(verdict, plan, stored payload): the stored suggestion for this stock and day (active strategy first, newest
-    first), else the active strategy's rules run on the history up to `day` (not saved)."""
+def rules_section(db: Session, symbol: str, day: str, hist: pd.DataFrame,
+                  profile=None) -> tuple[dict | None, dict | None, dict | None]:
+    """(verdict, plan, stored payload). With no `profile` (the pack): the stored suggestion for this stock and day,
+    active strategy first, newest first. With a `profile` (the analyst): only that profile's stored suggestion.
+    Failing that, the strategy's rules run on the history up to `day` (not saved)."""
     from app.services import suggestion_service
 
-    try:
-        active = profile_service.get_active(db)
-    except NotFound:
-        active = None
-    rows = list(db.scalars(select(Suggestion).where(Suggestion.symbol == symbol, Suggestion.trading_day == day)
-                           .order_by(Suggestion.id.desc())))
+    if profile is None:
+        try:
+            active = profile_service.get_active(db)
+        except NotFound:
+            active = None
+    else:
+        active = profile
+    q = select(Suggestion).where(Suggestion.symbol == symbol, Suggestion.trading_day == day)
+    if profile is not None:
+        q = q.where(Suggestion.profile_id == profile.id)
+    rows = list(db.scalars(q.order_by(Suggestion.id.desc())))
     rows.sort(key=lambda r: active is not None and r.profile_id == active.id, reverse=True)
     if rows:
         row = rows[0]
@@ -339,9 +346,15 @@ def build(db: Session, symbol: str, day: str, fetch_missing: bool = True, brief_
     pack = {"symbol": sym, "day": day, "price": price, "quarters": quarters, "ownership": ownership, "deals": deals,
             "events": events, "headlines": headlines, "market": market, "rules_verdict": verdict, "plan": plan,
             "unavailable": unavailable}
-    row = db.scalar(select(EvidencePackRow).where(EvidencePackRow.symbol == sym, EvidencePackRow.day == day))
+    return save(db, pack)
+
+
+def save(db: Session, pack: dict) -> dict:
+    """Store (or replace) the pack for its (symbol, day)."""
+    row = db.scalar(select(EvidencePackRow).where(EvidencePackRow.symbol == pack["symbol"],
+                                                  EvidencePackRow.day == pack["day"]))
     if row is None:
-        row = EvidencePackRow(symbol=sym, day=day, pack_json="{}")
+        row = EvidencePackRow(symbol=pack["symbol"], day=pack["day"], pack_json="{}")
         db.add(row)
     row.pack_json = json.dumps(pack, ensure_ascii=False)
     db.commit()

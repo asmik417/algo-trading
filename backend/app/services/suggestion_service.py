@@ -636,6 +636,7 @@ def watchlist_results(db: Session, run_id: int) -> dict:
             item["error"] = None
             # Lists never call the LLM: the decision narrative is the cached one, or the fallback until opened.
             item["decision"] = decision_service.build(db, rows[sym], payload, item["verdict"], allow_llm=False)
+            item["analyst"] = analysis_service.analyst_view_of(db, rows[sym])
             items.append(item)
         elif sym in errors:
             items.append(_error_item(sym, errors[sym]))

@@ -104,6 +104,9 @@ class IndexMove(ApiModel):
 class MarketBrief(ApiModel):
     day: str
     regime: Regime
+    audited: bool
+    audit_notes: list[str]
+    model: str
     context: MarketContext
     leaders: list[IndexMove]
     laggards: list[IndexMove]

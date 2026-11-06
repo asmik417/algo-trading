@@ -1,4 +1,4 @@
-"""The nightly monitoring job: refresh the NSE panel, mark every open/due paper position, record what happened.
+"""The nightly monitoring job: refresh the NSE panel, mark every open/due paper position and the scorecard's verdicts.
 Never runs twice at once, across threads or processes (API scheduler, POST /jobs/daily-update, the CLI script).
 """
 import fcntl
@@ -11,7 +11,7 @@ from app.core.logging import get_logger
 from app.db.session import SessionLocal
 from app.engine import config as engine_config
 from app.models import AppMeta
-from app.services import market_data, tracker_service
+from app.services import market_data, scorecard_service, tracker_service
 
 log = get_logger(__name__)
 
@@ -72,6 +72,12 @@ def run_daily_update() -> dict | None:
             raise RuntimeError("No market data available; positions were not marked")
         with SessionLocal() as db:
             summary = tracker_service.mark_all(db, day)
+            try:  # the scorecard: log new rules verdicts, mark logged ones that reached 20/40/60 sessions
+                logged, marks = scorecard_service.log_rules_verdicts(db), scorecard_service.mark_all(db)
+                log.info("Scorecard: %d verdicts logged, %d marks added", logged, marks)
+            except Exception:
+                db.rollback()
+                log.exception("Scorecard marking failed; positions were still marked")
         _write_meta({"last_daily_update": utc_now_iso(), "last_trading_day": day,
                      "last_daily_summary": json.dumps(summary)})
         log.info("Daily update done for %s: %s", day, summary)

@@ -3,6 +3,7 @@ Mirrors the Suggestions section of docs/API_CONTRACT.md; also reused by /stocks/
 """
 from typing import Literal
 
+from app.schemas.analyst import AnalystView
 from app.schemas.common import ApiModel
 from app.schemas.run import Run
 
@@ -70,6 +71,7 @@ class SuggestionSummary(ApiModel):
     id: int
     source: SuggestionSource
     verdict: Verdict
+    headline: str
     symbol: str
     rank: int | None
     score: float
@@ -173,6 +175,7 @@ class SuggestionDetail(SuggestionSummary):
     chart: ChartData
     filters: FilterResult
     decision: Decision
+    analyst: AnalystView | None
 
 
 class SuggestionsResponse(ApiModel):
@@ -185,6 +188,7 @@ class WatchlistHit(SuggestionSummary):
     filters: FilterResult
     error: None
     decision: Decision
+    analyst: AnalystView | None
 
 
 class WatchlistMiss(ApiModel):

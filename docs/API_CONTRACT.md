@@ -634,3 +634,36 @@ export interface JobStatus { brain: BrainStatus | null; running: boolean; last_d
 - 2026-11-06 (frontend): **`agrees_with_rules` is false when both say Watch.** By the rule (buy↔buy, avoid↔avoid/exit, else false), an analyst Watch on a rules Watch counts as "does not agree", which reads wrong in the dialog. Proposal: add watch↔watch (and hold↔watch, if intended) to the agreeing pairs. The UI shows `false` as "Does not agree with rules" and `null` as "No rules verdict to compare".
 - 2026-11-06 (frontend): **Units for `QuarterRow` money fields.** `revenue`, `ebitda` and `net_profit` have no stated unit (rupees or ₹ crore?), nor does `eps` (₹ per share, presumably). The evidence row shows them as plain numbers until the unit is written down. Proposal: state "₹ crore" (the unit results are filed in) for the three totals and "₹" for `eps`.
 - 2026-11-06 (frontend): **Scorecard: what `avg_change_pct` and `by_signal` mean.** (1) Is `avg_change_pct` the plain average price change of the marked verdicts at the horizon (so Avoid calls that worked pull it down), or the change signed by direction (positive = moved the way the call said)? The UI labels it "price change after N sessions" and the mock uses the plain average. (2) `by_signal` groups by a signal that `LoggedVerdict` does not carry; please state that an analyst verdict takes the rules signal of the same (symbol, day), and consider adding `signal: string | null` to `LoggedVerdict` so the worst-misses list can show it.
+- 2026-11-06 (backend), **the brain, part 3 (analyst view, verdict log, scorecard)**, as built:
+  - **What the analyst is given:**
+    - The pack, with `rules_verdict` and `plan` replaced by the profile's own.
+    - `strategy` (the profile's name), `is_holding` and `market_regime` (from the day's brief).
+    - A `derived` block computed by code, so the model never has to compute: latest-quarter YoY and QoQ for revenue, EBITDA and net profit; margin change in points; close vs entry, stop and target in %; and, for a holding, entry price, return so far, target, stop and exit date.
+    - URLs are stripped, because their digits would pollute the audit.
+    - A stock with an open or due position under that profile gets `add / hold / trim / exit`; any other stock gets `buy / watch / avoid`. The JSON schema enforces this.
+  - **Web search:**
+    - It is a separate, low-effort call with at most 2 searches, made only on the latest day and only when the pack has fewer than 3 headlines. The analysis call has no tools.
+    - Headlines are taken only from the search tool's own result blocks (title, URL, page age within 7 days), never from the model's text. They are stored in `news_items` and appended to the stored pack.
+    - It uses the basic `web_search_20250305`, not `_20260209`, whose dynamic filtering routes results through code execution and would not give those raw result blocks.
+  - **Audit:** the numbers written into the instructions are allowed (20 sessions, the ±5 band), as are numbers that are names: Nifty 50, S&P 500, the 50- and 200-day EMAs, and the 52-week high.
+  - **Failures:** a view whose model call fails is not stored. `GET …/analyst-view` then returns 404 with the reason of the last attempt.
+  - **`POST …/analyst-view`** always targets the latest trading day.
+  - **Cost:** the Manager holdings run cost **$2.56 for 18 views, $0.14 average** (range $0.04 to $0.30): input $4 and output $20 per million tokens, plus $0.01 per search. Most of that run was re-asked once because "S&P 500" was not yet allowed; with that fixed, a view costs about $0.04 to $0.13 without a search and $0.15 to $0.25 with one.
+  - **Nightly cost needs a decision.** The nightly job builds one view per followed stock (55 today) under the active strategy, capped by `ANALYST_MAX_VIEWS_PER_NIGHT` (default 60). That is about $5 to $8 a night (₹450 to ₹750), roughly ₹10,000 to ₹15,000 a month, not the few hundred rupees in BRAIN_PLAN. Options:
+    - views only for pick lists and positions;
+    - `ANALYST_EFFORT=low`;
+    - a cheaper model through `ANALYST_MODEL`.
+  - **Verdict log, as implemented:**
+    - Rules overall maps to a direction: buy → up, watch → sideways, avoid → down.
+    - `level` is the plan target for up, the stop for down, and null for sideways and for analyst views.
+    - A rules verdict's `close` is the suggestion's price, which is the close of its trading day.
+    - The first verdict per (symbol, day, source, profile) wins. A second Explore analysis the same day is not logged again.
+    - Rules verdicts are logged by an incremental sweep of saved suggestions: in the daily job, the nightly job and before every scorecard read. Analyst views are logged when stored.
+    - Marks are added in the daily job and the nightly job.
+  - **`worst`:** the 10 wrong marks at the horizon with the biggest miss. For up or down calls, the miss is the move against the call. For sideways calls, it is how far the price ended outside the ±5 % band.
+  - **DATA_MODEL:**
+    - `analyst_views` gains `evidence_json` (exactly what the model saw), `usage_json` and `cost_usd`.
+    - New tables: `verdict_log` and `verdict_marks`, as documented.
+    - `app_meta.verdict_log_suggestion_cursor` holds the sweep position.
+    - `MarketBrief.model` is `"deterministic"` when the text is the fallback.
+    - The nightly summary gains `views_failures`, `views_cost_usd`, `verdicts_logged` and `marks_added`.
