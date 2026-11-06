@@ -89,11 +89,11 @@ class Api:
     def __init__(self, base: str, username: str, password: str):
         self.base = base.rstrip("/")
         self.s = requests.Session()
-        r = self.s.post(f"{self.base}/auth/login", json={"username": username, "password": password}, timeout=30)
+        r = self.s.post(f"{self.base}/auth/login", json={"username": username, "password": password}, timeout=120)
         r.raise_for_status()
 
     def get(self, path: str, **params):
-        r = self.s.get(f"{self.base}{path}", params=params or None, timeout=60)
+        r = self.s.get(f"{self.base}{path}", params=params or None, timeout=120)
         if r.status_code == 404:
             return None
         r.raise_for_status()
@@ -122,6 +122,7 @@ def verdict_cell(cell, overall: str | None) -> None:
 
 def build(api: Api, run: dict, items: list[dict], profile: dict, brief: dict | None, out: Path) -> None:
     wb = Workbook()
+    details = {it["id"]: (api.get(f"/suggestions/{it['id']}") or {}) for it in items if it.get("id")}
 
     # ---------- Sheet 1: Summary ----------
     ws = wb.active
@@ -184,7 +185,8 @@ def build(api: Api, run: dict, items: list[dict], profile: dict, brief: dict | N
     # ---------- Sheet 2: Reasons ----------
     ws2 = wb.create_sheet("Reasons")
     headers2 = ["Stock", "Verdict", "Evidence FOR", "Evidence AGAINST", "Rules failed", "Chart points",
-                "Plain-English summary", "Analyst: what is odd", "Analyst: bull case", "Analyst: bear case",
+                "Plain-English summary", "Plan notes", "Analyst: observations", "Analyst: what is odd",
+                "Analyst: bull case", "Analyst: bear case", "Analyst: tests (claim → evidence: note)",
                 "Analyst: trigger that flips the call", "Analyst: wants to know"]
     for c, h in enumerate(headers2, start=1):
         ws2.cell(row=1, column=c, value=h)
@@ -194,6 +196,7 @@ def build(api: Api, run: dict, items: list[dict], profile: dict, brief: dict | N
         if it.get("error"):
             continue
         v, d, a = it["verdict"], it.get("decision") or {}, it.get("analyst")
+        plan = details.get(it["id"], {}).get("plan") or {}
         finds = d.get("findings") or []
         bullets = lambda xs: "\n".join(f"• {x}" for x in xs) if xs else "—"
         row = [
@@ -202,7 +205,10 @@ def build(api: Api, run: dict, items: list[dict], profile: dict, brief: dict | N
             bullets([f["text"] for f in finds if f.get("side") == "against"]),
             bullets(v["rules"]["failures"]), bullets(v["chart"]["points"]),
             d.get("narrative") or "—",
+            "\n".join(x for x in [plan.get("timing_note"), plan.get("exit_note")] if x) or "—",
+            bullets(a["observations"]) if a else "not run",
             bullets(a["anomalies"]) if a else "not run", a["bull_case"] if a else "—", a["bear_case"] if a else "—",
+            bullets([f"{t['claim']} → {title(t['evidence'])}: {t['note']}" for t in (a.get("tests") or [])]) if a else "—",
             a["trigger"] if a else "—", a["want_to_know"] if a else "—",
         ]
         for c, val in enumerate(row, start=1):
@@ -211,7 +217,7 @@ def build(api: Api, run: dict, items: list[dict], profile: dict, brief: dict | N
         ws2.cell(row=r, column=1).font = BOLD
         verdict_cell(ws2.cell(row=r, column=2), v["overall"])
         r += 1
-    set_widths(ws2, [12, 9, 40, 40, 36, 28, 48, 44, 44, 44, 40, 36])
+    set_widths(ws2, [12, 9, 40, 40, 36, 28, 48, 40, 48, 44, 44, 44, 52, 40, 36])
 
     # ---------- Sheet 3: Numbers ----------
     ws3 = wb.create_sheet("Numbers")
@@ -225,7 +231,7 @@ def build(api: Api, run: dict, items: list[dict], profile: dict, brief: dict | N
     for it in items:
         if it.get("error"):
             continue
-        det = api.get(f"/suggestions/{it['id']}") or {}
+        det = details.get(it["id"], {})
         f, ind = det.get("fundamentals") or {}, det.get("indicators") or {}
         mc = f.get("market_cap")
         ocf = f.get("latest_ocf")
