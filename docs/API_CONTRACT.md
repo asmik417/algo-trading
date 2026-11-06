@@ -289,6 +289,49 @@ Review = { "id": 3, "position_id": 9, "symbol": "X", "pnl": -560.0, "pnl_pct": -
 
 ---
 
+## Backtests (the time machine)
+
+A backtest replays a strategy over past dates. On each **scan date** the engine sees only bars up to that date, runs the same pipeline as a full run (prefilter → shortlist → score → hard filters → plan), and every pick becomes a simulated trade that is then walked forward day by day with the same rules the Tracker uses. Nothing is predicted by the LLM; the backtest is pure engine code under `backend/app/engine/backtest/` (pure: no DB, no HTTP) driven by `services/backtest_service.py`.
+
+`POST /backtests` body `BacktestBody` → 202 `Backtest` (status `queued`). Only one backtest runs at a time: 409 `{ "detail": "A backtest is already running", "backtest_id": n }` if another is queued or running.
+`GET /backtests?profile_id=1&limit=20` → `Backtest[]` newest first (all profiles when `profile_id` omitted).
+`GET /backtests/{id}` → `Backtest` (poll every 2 s while queued/running; `progress.phase` ∈ history | fundamentals | scanning | simulating | saving | done, `progress.done/total` = scan dates finished, `current_symbol` = scan date being processed).
+`GET /backtests/{id}/results` → `BacktestResults`. 409 while not `done`.
+`DELETE /backtests/{id}` → 204 (not while running → 409).
+
+### Rules the simulation must follow
+- **No look-ahead.** Histories passed to scoring and planning are cut to bars ≤ scan date; the plan is built with `trading_day = scan date`. A test must prove that adding or changing bars after the scan date never changes a scan's picks.
+- **Scan dates.** `frequency: "weekly"` = the last trading day of each ISO week in [start_date, end_date]; `"daily"` = every trading day. Start is clamped so that at least 250 trading days of history exist before the first scan.
+- **Entry.** `entry_rule: "next_close"` (default) fills at the close of the first trading day after the scan date, like pressing Track the next evening. `"optimal_limit"` fills at `entry_optimal` on the first of the next 5 sessions whose Low ≤ `entry_optimal`; if none, no trade is opened (counted in `summary.skipped_no_fill`). `qty = floor(capital_per_trade / fill price)`; qty 0 → skipped.
+- **One open simulated trade per symbol.** A pick while the symbol's previous simulated trade is still open is skipped (counted in `summary.skipped_repeat`).
+- **Exit**, checked on every session's close after entry, in this order: close ≤ stop → `stop_hit`; close ≥ target → `target_hit`; session date ≥ `planned_exit_date` → `horizon_closed`. Exit price is that session's close. Trades still open at `end_date` get `exit_reason: "open"`, are marked at the last close, and are excluded from win rate.
+- **Costs.** `pnl = qty × (exit − entry) − invested × cost_pct / 100` (round trip, default 0.3 %). `r_multiple = (exit − entry) / (entry − stop)`.
+- **Excursions.** `mfe_pct` / `mae_pct` = best / worst close vs entry, in %, while held. `nifty_pct` = Nifty 50 change from entry date to exit date (null if unavailable).
+- **Fundamentals.** There is no free point-in-time fundamentals source, so the backtest is honest about it. `fundamentals_mode: "point_in_time"` (default): one bundle per symbol is fetched as of today and cached; quarterly and cash-flow rows whose period end is later than *scan date − 45 days* are dropped (results are published ~45 days after the quarter); `trailingPE` is recomputed as scan-date close ÷ sum of the last four surviving quarterly EPS (unavailable if fewer than four); `marketCap` is scaled by scan-date close ÷ today's close; 52-week high/low come from the truncated history. `returnOnEquity`, `debtToEquity`, `profitMargins`, `revenueGrowth` keep today's values, and `Backtest.caveats` says so. `"technical_only"`: weights of earnings_acceleration, fundamental_quality and valuation are set to 0 and the rest renormalised to 100; the P/E, ROE, debt, profit-growth and market-cap rules are skipped; caveats say so.
+- **Loss patterns** are tagged deterministically on every losing trade with the Loss Analysis tag vocabulary, all that match: `stop_too_tight` (stopped out within 5 sessions and a later close before the planned exit date was above entry), `bought_extended` (fill more than 8 % above EMA20 on the fill day), `whole_market_fell` (nifty_pct ≤ −3), `held_too_long` (horizon_closed loss with mfe_pct ≥ half the target distance in %), `bad_entry_timing` (mae within the first 3 sessions ≥ half the risk), `low_liquidity` (avg 20-day turnover below ₹1 crore at scan date), else `other`.
+- **Summary maths.** `win_rate_pct` = wins ÷ closed trades; `profit_factor` = gross wins ÷ gross losses (null if no losses); `expectancy_r` = mean r_multiple of closed trades; `total_pnl` in ₹ at `capital_per_trade`; `max_drawdown_pct` from the equity curve (cumulative closed P&L by exit date, as % of `capital_per_trade × 10`). `by_month` keys are `YYYY-MM` of the entry date.
+- Price data: bhavcopy days needed for the range are downloaded and cached like a normal run; stocks whose history shows a possible corporate action are excluded by the existing rule.
+
+```ts
+export type ScanFrequency = 'weekly' | 'daily';
+export type EntryRule = 'next_close' | 'optimal_limit';
+export type FundamentalsMode = 'point_in_time' | 'technical_only';
+export type BacktestExit = CloseReason | 'open';
+export interface BacktestBody { profile_id: number; start_date: string; end_date: string; frequency?: ScanFrequency; entry_rule?: EntryRule; fundamentals_mode?: FundamentalsMode; cost_pct?: number; capital_per_trade?: number; }
+export interface BacktestSummary { trades: number; closed: number; wins: number; losses: number; open_at_end: number; skipped_repeat: number; skipped_no_fill: number; win_rate_pct: number | null; avg_win_pct: number | null; avg_loss_pct: number | null; avg_pnl_pct: number | null; expectancy_r: number | null; profit_factor: number | null; total_pnl: number; max_drawdown_pct: number | null; avg_days_held: number | null; nifty_avg_pct: number | null; exits: { target_hit: number; stop_hit: number; horizon_closed: number; open: number }; }
+export interface Backtest { id: number; profile_id: number; profile_name: string; status: RunStatus; start_date: string; end_date: string; frequency: ScanFrequency; entry_rule: EntryRule; fundamentals_mode: FundamentalsMode; cost_pct: number; capital_per_trade: number; params: Record<string, unknown>; progress: RunProgress; scan_count: number | null; summary: BacktestSummary | null; caveats: string[]; error: string | null; started_at: string | null; finished_at: string | null; created_at: string; }
+export interface BacktestBreakdownRow { key: string; trades: number; win_rate_pct: number | null; avg_pnl_pct: number | null; total_pnl: number; }
+export interface BacktestLossPattern { key: string; label: string; count: number; share_pct: number; }
+export interface BacktestTrade { id: number; symbol: string; scan_date: string; entry_date: string; entry_price: number; qty: number; invested: number; stop_loss: number; target: number; planned_exit_date: string; signal: string; stage: string; score: number; market_cap_bucket: string; sector: string | null; exit_date: string | null; exit_price: number | null; exit_reason: BacktestExit; pnl: number; pnl_pct: number; r_multiple: number | null; days_held: number; mfe_pct: number | null; mae_pct: number | null; nifty_pct: number | null; tags: string[]; }
+export interface EquityPoint { date: string; pnl: number; }
+export interface BacktestResults { backtest: Backtest; by_signal: BacktestBreakdownRow[]; by_stage: BacktestBreakdownRow[]; by_market_cap: BacktestBreakdownRow[]; by_sector: BacktestBreakdownRow[]; by_month: BacktestBreakdownRow[]; loss_patterns: BacktestLossPattern[]; equity_curve: EquityPoint[]; trades: BacktestTrade[]; }
+```
+Defaults: `frequency` weekly, `entry_rule` next_close, `fundamentals_mode` point_in_time, `cost_pct` 0.3, `capital_per_trade` the profile's paper capital. Validation: `start_date < end_date`, `end_date` ≤ last trading day, `cost_pct` 0-5, range at most 3 years → 400.
+
+Frontend (`/backtest`, sidebar item **Backtest** between Loss Analysis and Strategies): a **New backtest** form (strategy defaulting to the active one, date range defaulting to the last 12 months, frequency, entry rule, fundamentals mode with one-line help, cost %), a list of past backtests with status and progress, and a results page `/backtest/:id` with: stat tiles (trades, win rate, avg win / avg loss, expectancy R, profit factor, total P&L, max drawdown, vs Nifty), the caveats banner, the equity curve, breakdown tables (signal, stage, market cap, sector, month), the loss-pattern bar list using the Loss Analysis labels, and a sortable trades table (click a row → the symbol's row expands with plan numbers and tags; no dialog). **Compare**: choose two finished backtests and see their summaries side by side.
+
+---
+
 ## Jobs (daily monitoring)
 
 `POST /jobs/daily-update` → 202 `{ "started": true }` (runs in background; 200 `{ "started": false, "reason": "already running" }`).
@@ -392,6 +435,8 @@ export interface JobStatus { running: boolean; last_daily_update: string | null;
 - 2026-11-05 (backend → accepted): `CreateProfileBody.owner` optional; TS updated, backend test exception removed.
 
 - 2026-11-06 (guide): **Pick lists** added (named, saved My Picks lists; `Run.list_id`/`list_name`; `WatchlistRunBody` takes `list_id` or `symbols`). See the "Pick lists" section.
+
+- 2026-11-06 (guide): **Backtests** added (see the "Backtests" section; types in the section's snippet, not duplicated in the main block).
 
 ### Open
 - 2026-11-05 (frontend): **`WatchlistItem` error rows contradict their type.** The prose says an unknown or unscorable symbol comes back with `error` set "and score fields null", but `WatchlistItem extends SuggestionSummary`, where `id`, `score`, `price`, `entry_optimal`, `stop_loss`, `target`, `risk_reward`, `horizon_days`, `stage`, `signal`, `planned_exit_date` are all non-null, and `filters: FilterResult` is required. An unknown symbol also has no persisted suggestion, so there is no real `id`. Proposal: a discriminated union, so neither side has to guess:

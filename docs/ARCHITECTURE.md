@@ -20,7 +20,7 @@ ai_trade_assistant/
 | DB | SQLite via SQLAlchemy 2.0, `DATABASE_URL` configurable | Zero setup today; switch to Postgres by changing one env var. |
 | Scheduler | APScheduler inside the API process | One nightly job; no extra infra. |
 | Market data | NSE bhavcopy (free, full market) + yfinance (fundamentals, shortlist only) | Already proven in the prototype. Swappable behind `engine/data/`. |
-| Narration | OpenAI gpt-4o-mini via `engine/agents/emerging_explainer.py` | Cheap; only narrates computed numbers. |
+| Narration | Anthropic API (`NARRATION_MODEL`, default claude-opus-5-5) via `engine/agents/` | Only narrates computed numbers; deterministic fallback text if the call fails. |
 | Frontend | React + TS + Vite + Tailwind + TanStack Query + React Router + Recharts | Fast to build, easy to read, standard. |
 
 ## Backend layout
@@ -50,6 +50,7 @@ backend/
 │   │   ├── explore_service.py  universe table, search, single-stock detail
 │   │   ├── analysis_service.py builds the "SuggestionDetail" shape (chart, breakdown, narration)
 │   │   ├── tracker_service.py  open / mark / extend / shorten / close / stats
+│   │   ├── backtest_service.py runs a backtest in the background, persists results
 │   │   ├── review_service.py   loss reviews and tag summaries
 │   │   └── run_registry.py     in-memory status of background runs
 │   ├── api/v1/                 one router per resource; `router.py` aggregates them
@@ -59,6 +60,7 @@ backend/
 │   │   ├── data/               nse_universe (bhavcopy), fetcher (yfinance), indicators
 │   │   ├── scoring/            six pillars, engine.evaluate(), stage, signal
 │   │   ├── scanner/            the old two-stage funnel (reference; superseded by suggestion_service)
+│   │   ├── backtest/           pure replay + simulation + loss-pattern tagging (no DB/HTTP)
 │   │   └── agents/             LLM narration (emerging_explainer) and legacy agents
 │   └── jobs/
 │       └── daily_update.py     refresh panel → mark positions → close/due → record meta

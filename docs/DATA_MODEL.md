@@ -109,6 +109,35 @@ Primary key `(position_id, mark_date)`.
 Fixed reason tags (`GET /api/v1/reviews/tags`):
 `bought_extended`, `stop_too_tight`, `stop_too_wide`, `earnings_miss`, `whole_market_fell`, `sector_news`, `company_news`, `weak_fundamentals_missed`, `low_liquidity`, `held_too_long`, `exited_too_early`, `bad_entry_timing`, `other`.
 
+## backtests
+| column | type | notes |
+|---|---|---|
+| profile_id | FK profiles | cascade delete |
+| status | str | queued, running, done, failed |
+| start_date, end_date | str | requested range (start may be clamped; store the effective one) |
+| frequency, entry_rule, fundamentals_mode | str | see API contract |
+| cost_pct, capital_per_trade | float | |
+| params_json | text | snapshot of the strategy params used |
+| scan_count | int nullable | |
+| summary_json | text nullable | `BacktestSummary` |
+| breakdowns_json | text nullable | by_signal / by_stage / by_market_cap / by_sector / by_month / loss_patterns / equity_curve |
+| caveats_json | text | list of strings |
+| error | text nullable | |
+| started_at, finished_at, created_at | str | |
+
+## backtest_trades
+| column | type | notes |
+|---|---|---|
+| backtest_id | FK backtests | cascade delete |
+| symbol, scan_date, entry_date | str | |
+| entry_price, qty, invested, stop_loss, target | float / int | |
+| planned_exit_date | str | |
+| signal, stage, score, market_cap_bucket, sector | | snapshot at scan date |
+| exit_date, exit_price | nullable | |
+| exit_reason | str | target_hit, stop_hit, horizon_closed, open |
+| pnl, pnl_pct, r_multiple, days_held, mfe_pct, mae_pct, nifty_pct | float nullable | |
+| tags_json | text | loss-pattern tags |
+
 ## app_meta
 Key/value: `last_daily_update` (ISO timestamp), `last_trading_day`, `panel_built_for` (trading day the in-memory panel was built from).
 
