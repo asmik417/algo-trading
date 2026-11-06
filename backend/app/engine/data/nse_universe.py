@@ -130,24 +130,13 @@ def find_latest_trading_day(max_lookback_days: int = 10) -> date | None:
     return None
 
 
-def build_market_panel(lookback_days: int = config.BHAVCOPY_LOOKBACK_DAYS) -> pd.DataFrame:
-    """Long-format DataFrame (symbol, date, open, high, low, close, volume,
-    turnover_lacs, deliv_pct) covering every NSE equity for the last
-    `lookback_days` calendar days. Cached to disk per trading day, so repeat
-    calls only fetch the handful of days not already on disk."""
-    frames = []
-    day = date.today()
-    earliest = day - timedelta(days=lookback_days)
-    while day >= earliest:
-        df = _fetch_day(day)
-        if df is not None:
-            frames.append(df)
-        day -= timedelta(days=1)
+PANEL_COLUMNS = ["symbol", "date", "open", "high", "low", "close", "volume", "turnover_lacs", "deliv_pct"]
 
+
+def _assemble(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """Daily frames -> one clean long-format panel, sorted by symbol then date."""
     if not frames:
-        log.error("Could not build any NSE market panel — bhavcopy fetch failed for every day in range")
-        return pd.DataFrame(columns=["symbol", "date", "open", "high", "low", "close", "volume", "turnover_lacs", "deliv_pct"])
-
+        return pd.DataFrame(columns=PANEL_COLUMNS)
     panel = pd.concat(frames, ignore_index=True)
     # NSE writes " -" for missing numbers (e.g. delivery on some fund rows); one such cell would turn a
     # whole column into text. Coerce to NaN = unavailable, never 0.
@@ -156,8 +145,35 @@ def build_market_panel(lookback_days: int = config.BHAVCOPY_LOOKBACK_DAYS) -> pd
             panel[col] = pd.to_numeric(panel[col], errors="coerce")
     panel = panel.dropna(subset=["close"])
     panel = panel.drop_duplicates(subset=["symbol", "date"], keep="last")
-    panel = panel.sort_values(["symbol", "date"]).reset_index(drop=True)
+    return panel.sort_values(["symbol", "date"]).reset_index(drop=True)
+
+
+def build_market_panel(lookback_days: int = config.BHAVCOPY_LOOKBACK_DAYS) -> pd.DataFrame:
+    """Long-format DataFrame (symbol, date, open, high, low, close, volume,
+    turnover_lacs, deliv_pct) covering every NSE equity for the last
+    `lookback_days` calendar days. Cached to disk per trading day, so repeat
+    calls only fetch the handful of days not already on disk."""
+    today = date.today()
+    panel = build_market_panel_range(today - timedelta(days=lookback_days), today)
+    if panel.empty:
+        log.error("Could not build any NSE market panel — bhavcopy fetch failed for every day in range")
     return panel
+
+
+def build_market_panel_range(start: date, end: date, progress=None) -> pd.DataFrame:
+    """The same panel for any calendar range [start, end] (e.g. years back, for backtests). Each day is read from
+    the disk cache or downloaded once and cached, exactly like the live panel. `progress(done, total)` is called
+    after every calendar day. Days after today are never requested."""
+    end = min(end, date.today())
+    days = [start + timedelta(days=i) for i in range((end - start).days + 1)] if end >= start else []
+    frames = []
+    for i, day in enumerate(days, start=1):
+        df = _fetch_day(day)
+        if df is not None:
+            frames.append(df)
+        if progress is not None:
+            progress(i, len(days))
+    return _assemble(frames)
 
 
 def latest_trading_day(panel: pd.DataFrame) -> pd.Timestamp | None:

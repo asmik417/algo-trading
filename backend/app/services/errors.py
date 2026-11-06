@@ -6,9 +6,10 @@ main.py maps them to the contract's status codes: BadInput 400, NotFound 404, Co
 class ServiceError(Exception):
     status_code = 500
 
-    def __init__(self, detail: str):
+    def __init__(self, detail: str, **extra):
         super().__init__(detail)
         self.detail = detail
+        self.extra = extra  # extra top-level response fields, e.g. {"backtest_id": 3}
 
 
 class BadInput(ServiceError):

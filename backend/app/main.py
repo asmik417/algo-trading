@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import SessionLocal, init_db
 from app.jobs import scheduler
-from app.services import market_data, profile_service, suggestion_service
+from app.services import backtest_service, market_data, profile_service, suggestion_service
 from app.services.errors import ServiceError
 
 log = get_logger(__name__)
@@ -25,6 +25,7 @@ async def lifespan(_app: FastAPI):
     with SessionLocal() as db:
         profile_service.seed_default_profile(db)
         suggestion_service.recover_interrupted_runs(db)
+        backtest_service.recover_interrupted(db)
     log.info("Database ready at %s", settings.DATABASE_URL.split("///")[-1])
     if settings.WARM_PANEL:
         market_data.warm_up()
@@ -60,7 +61,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(ServiceError)
     async def _service_error(_req: Request, exc: ServiceError):
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail, **exc.extra})
 
     @app.exception_handler(RequestValidationError)
     async def _bad_request(_req: Request, exc: RequestValidationError):

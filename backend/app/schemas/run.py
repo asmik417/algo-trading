@@ -22,6 +22,8 @@ class Run(ApiModel):
     status: RunStatus
     kind: RunKind
     symbols: list[str] | None
+    list_id: int | None
+    list_name: str | None
     trading_day: str | None
     progress: RunProgress
     universe_size: int | None
@@ -38,4 +40,6 @@ class StartRunBody(ApiModel):
 
 
 class WatchlistRunBody(ApiModel):
-    symbols: list[str]
+    """Exactly one of the two (400 otherwise)."""
+    list_id: int | None = None
+    symbols: list[str] | None = None

@@ -67,6 +67,8 @@ _ADDED_COLUMNS = {
         "kind": "VARCHAR(16) NOT NULL DEFAULT 'full'",
         "symbols_json": "TEXT",
         "item_errors_json": "TEXT",
+        # 2026-11-06: pick lists. Adding a REFERENCES column in place is allowed in SQLite (default NULL).
+        "list_id": "INTEGER REFERENCES pick_lists(id) ON DELETE SET NULL",
     },
 }
 
@@ -84,9 +86,22 @@ def _add_missing_columns() -> None:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
+def _repair_pick_list_name_index() -> None:
+    """2026-11-06: a short-lived build created uq_pick_lists_name_ci on lower('name') (a constant), which would
+    allow only one pick list. create_all never fixes an index on an existing table, so rebuild it on the column."""
+    if not _is_sqlite:
+        return
+    with engine.begin() as conn:
+        sql = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='index' AND name='uq_pick_lists_name_ci'")).scalar()
+        if sql and "lower('name')" in sql.replace('"', "'"):
+            conn.execute(text("DROP INDEX uq_pick_lists_name_ci"))
+            conn.execute(text("CREATE UNIQUE INDEX uq_pick_lists_name_ci ON pick_lists (lower(name))"))
+
+
 def init_db() -> None:
     import app.models  # noqa: F401  (registers every table on Base.metadata)
 
     _upgrade_suggestions_table()
+    Base.metadata.create_all(bind=engine)  # creates new tables (pick_lists) before columns that reference them
     _add_missing_columns()
-    Base.metadata.create_all(bind=engine)
+    _repair_pick_list_name_index()

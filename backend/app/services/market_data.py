@@ -4,7 +4,7 @@ Also the NIFTY 50 benchmark change via yfinance. Every lookup returns None when 
 import os
 import threading
 import time
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -150,20 +150,32 @@ _HISTORY_COLUMNS = {"open": "Open", "high": "High", "low": "Low", "close": "Clos
                     "deliv_pct": "DelivPct", "turnover_lacs": "TurnoverLacs"}
 
 
+def to_histories(panel: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Long panel -> symbol -> OHLCV history (Open/High/Low/Close/Volume/DelivPct/TurnoverLacs), oldest first."""
+    if panel.empty:
+        return {}
+    cols = [c for c in _HISTORY_COLUMNS if c in panel.columns]
+    built = {}
+    for sym, g in panel.groupby("symbol", sort=False):
+        h = g.set_index("date")[cols]
+        h.columns = [_HISTORY_COLUMNS[c] for c in cols]
+        built[sym] = h
+    return built
+
+
 def all_histories() -> dict[str, pd.DataFrame]:
-    """symbol -> history (same shape as nse_universe.symbol_price_history), built in one groupby per panel."""
+    """symbol -> history for the live panel, built in one groupby per panel."""
     global _histories
     panel = get_panel()
     with _lock:
         if not _histories and not panel.empty:
-            cols = [c for c in _HISTORY_COLUMNS if c in panel.columns]
-            built = {}
-            for sym, g in panel.groupby("symbol", sort=False):
-                h = g.set_index("date")[cols]
-                h.columns = [_HISTORY_COLUMNS[c] for c in cols]
-                built[sym] = h
-            _histories = built
+            _histories = to_histories(panel)
         return _histories
+
+
+def histories_for_range(start: date, end: date, progress=None) -> dict[str, pd.DataFrame]:
+    """Histories for any past range (backtests); missing bhavcopy days are downloaded and cached."""
+    return to_histories(nse_universe.build_market_panel_range(start, end, progress=progress))
 
 
 def history(symbol: str) -> pd.DataFrame:
@@ -206,6 +218,23 @@ def _nifty_closes() -> pd.Series | None:
     _nifty.clear()
     _nifty[key] = series
     return series
+
+
+def nifty_closes_range(start: date, end: date) -> pd.Series | None:
+    """NIFTY 50 daily closes for [start, end] (yfinance); None on failure."""
+    try:
+        import yfinance as yf
+
+        hist = yf.Ticker("^NSEI").history(start=start.isoformat(), end=(end + timedelta(days=1)).isoformat(),
+                                          interval="1d", auto_adjust=False)
+        if hist.empty:
+            return None
+        series = hist["Close"].copy()
+        series.index = pd.to_datetime(series.index).tz_localize(None).normalize()
+        return series
+    except Exception:
+        log.warning("NIFTY 50 range fetch failed; benchmark unavailable", exc_info=True)
+        return None
 
 
 def nifty_change_pct(from_date: str | date, to_date: str | date | None = None) -> float | None:
