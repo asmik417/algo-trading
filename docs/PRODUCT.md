@@ -14,6 +14,7 @@ Personal project for three people: the developer, their manager and the MD. No c
 3. **Stocks → Explore** shows every NSE stock, searchable like Groww, with the same dialog available on demand ("analyse under my parameters").
 4. **Tracker** simulates ₹10,000 (configurable per profile) invested on the suggestion day in every stock the user chooses to track. The daily job marks each position to market, closes it on stop or target, and flags it as *due* when the planned exit date arrives. Extending or shortening the horizon **requires a reason**, which is logged, so we can later see whether extensions helped.
 5. **Loss Analysis** lists every closed losing position until it has a review: tagged reasons, the mistake, the lesson, and the parameter or algo change it suggests. Tag counts per profile show what keeps going wrong.
+6. **Backtest** replays a strategy over past dates with the engine blind to anything after each scan date, simulates every pick with the Tracker's rules, and reports win rate, expectancy, drawdown, breakdowns and auto-tagged loss patterns. It is how parameters get tested in hours instead of months; the Tracker then confirms on live data.
 
 ## Success metrics the UI must surface
 
