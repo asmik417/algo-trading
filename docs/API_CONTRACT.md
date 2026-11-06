@@ -118,7 +118,7 @@ export interface WatchlistResults { run: Run; items: WatchlistItem[]; }
 
 ## Pick lists (named, saved lists for My Picks)
 
-A pick list is a named set of symbols the user keeps and re-analyses, e.g. "Manager holdings". Lists are **independent of strategies**: the same list can be analysed under any strategy. Names are unique (case-insensitive, trimmed), 1-60 chars. Symbols: 1-50, upper-cased, de-duplicated, order preserved.
+A pick list is a named set of symbols the user keeps and re-analyses, e.g. "Manager holdings". Lists are **independent of strategies**: the same list can be analysed under any strategy. Names are unique (case-insensitive, trimmed), 1-60 chars. The name "New list…" (any case, with `...` or `…`) is reserved for the UI's menu entry → 400. Symbols: 1-50, upper-cased, de-duplicated, order preserved.
 
 `GET /pick-lists` → `PickList[]` ordered by `updated_at` desc.
 `POST /pick-lists` body `{ "name": "Manager holdings", "symbols": ["HEGAM", "AMBER"] }` → 201 `PickList`. 409 on duplicate name.
