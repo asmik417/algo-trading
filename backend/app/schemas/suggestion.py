@@ -30,6 +30,42 @@ class Verdict(ApiModel):
     reason: str
 
 
+Direction = Literal["up", "down", "sideways"]
+
+
+class Finding(ApiModel):
+    side: Literal["for", "against"]
+    text: str
+
+
+class Expectation(ApiModel):
+    direction: Direction
+    level: float | None
+    by_date: str
+    text: str
+
+
+class ReviewRule(ApiModel):
+    until: str
+    trigger: str
+
+
+class Confidence(ApiModel):
+    signal_win_rate_pct: float | None
+    trades: int | None
+    backtest_id: int | None
+
+
+class Decision(ApiModel):
+    overall: Overall
+    headline: str
+    findings: list[Finding]
+    expectation: Expectation
+    review: ReviewRule
+    confidence: Confidence
+    narrative: str
+
+
 class SuggestionSummary(ApiModel):
     id: int
     source: SuggestionSource
@@ -136,6 +172,7 @@ class SuggestionDetail(SuggestionSummary):
     fundamentals: Fundamentals
     chart: ChartData
     filters: FilterResult
+    decision: Decision
 
 
 class SuggestionsResponse(ApiModel):
@@ -147,6 +184,7 @@ class WatchlistHit(SuggestionSummary):
     """A symbol that was analysed (it may still have failed the filters)."""
     filters: FilterResult
     error: None
+    decision: Decision
 
 
 class WatchlistMiss(ApiModel):

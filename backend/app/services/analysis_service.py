@@ -17,7 +17,7 @@ from app.engine.scoring.common import PillarResult
 from app.engine.scoring.engine import PILLAR_ORDER, CandidateScore
 from app.engine.scoring.signal import SIGNALS
 from app.models import Position, Suggestion
-from app.services import market_data
+from app.services import decision_service, market_data
 from app.services.plan_service import DISCLAIMER
 
 log = get_logger(__name__)
@@ -258,7 +258,8 @@ def narration(db: Session, row: Suggestion, payload: dict) -> dict:
         source = "fallback"
         text = emerging_explainer._fallback_explanation(candidate)
     out = {"why_flagged": str(text.get("why_flagged") or ""), "what_changed": str(text.get("what_changed") or "")}
-    row.narration_json = json.dumps({**out, "source": source, "at": int(time.time())})
+    # Merge, don't replace: the same JSON also caches the decision narrative (decision_service).
+    row.narration_json = json.dumps({**(cached or {}), **out, "source": source, "at": int(time.time())})
     db.commit()
     return out
 
@@ -317,4 +318,5 @@ def build_detail(db: Session, row: Suggestion) -> dict:
         "chart": chart(market_data.history(row.symbol)),
         "filters": payload.get("filters", {"passed": True, "failures": []}),
     })
+    out["decision"] = decision_service.build(db, row, payload, out["verdict"], allow_llm=True)
     return out

@@ -25,7 +25,7 @@ from app.engine.scoring.engine import CandidateScore, evaluate
 from app.engine.scoring.market_metrics import compute as compute_market_metrics
 from app.engine.scoring.signal import SIGNALS
 from app.models import Suggestion, SuggestionRun
-from app.services import analysis_service, market_data, plan_service, profile_service, run_registry
+from app.services import analysis_service, decision_service, market_data, plan_service, profile_service, run_registry
 from app.services.analysis_service import num
 from app.services.errors import BadInput, NotFound
 
@@ -630,8 +630,11 @@ def watchlist_results(db: Session, run_id: int) -> dict:
     for sym in json.loads(run.symbols_json or "[]"):
         if sym in rows:
             item = analysis_service.summary(rows[sym], lookup)
-            item["filters"] = json.loads(rows[sym].payload_json or "{}").get("filters", {"passed": True, "failures": []})
+            payload = json.loads(rows[sym].payload_json or "{}")
+            item["filters"] = payload.get("filters", {"passed": True, "failures": []})
             item["error"] = None
+            # Lists never call the LLM: the decision narrative is the cached one, or the fallback until opened.
+            item["decision"] = decision_service.build(db, rows[sym], payload, item["verdict"], allow_llm=False)
             items.append(item)
         elif sym in errors:
             items.append(_error_item(sym, errors[sym]))
