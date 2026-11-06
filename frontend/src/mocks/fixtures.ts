@@ -76,7 +76,7 @@ export const PROFILE_SEEDS: Profile[] = [
 
 type SuggestionSeed = Omit<
   SuggestionSummary,
-  'id' | 'source' | 'rank' | 'risk_reward' | 'is_tracked' | 'position_id'
+  'id' | 'source' | 'rank' | 'risk_reward' | 'is_tracked' | 'position_id' | 'verdict'
 >;
 const seed = (s: SuggestionSeed): SuggestionSeed => s;
 

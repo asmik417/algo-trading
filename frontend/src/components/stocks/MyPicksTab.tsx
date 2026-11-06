@@ -9,7 +9,7 @@ import { useTrackSuggestion } from '../../hooks/useTrackSuggestion';
 import { useRunResults, useStartWatchlistRun } from '../../hooks/useWatchlist';
 import { formatDate } from '../../lib/format';
 import { isMiss } from '../../lib/watchlist';
-import type { Profile } from '../../types/api';
+import type { Overall, Profile } from '../../types/api';
 import { Button } from '../ui/Button';
 import { EmptyState } from '../ui/EmptyState';
 import { ErrorNotice } from '../ui/ErrorNotice';
@@ -70,8 +70,8 @@ export function MyPicksTab({
   };
 
   const errors = items.filter(isMiss).length;
-  const passes = items.filter((i) => !isMiss(i) && i.filters.passed).length;
-  const fails = items.length - errors - passes;
+  const hits = items.filter((i) => !isMiss(i));
+  const countOf = (o: Overall) => hits.filter((i) => !isMiss(i) && i.verdict.overall === o).length;
 
   return (
     <div className="space-y-4">
@@ -121,8 +121,8 @@ export function MyPicksTab({
           description={
             <>
               Type symbols above or paste a list like RELIANCE, TCS, INFY. Each one is scored under{' '}
-              <strong>{profile.name}</strong> with the same rules as the algo, and you see whether
-              it passes your filters.
+              <strong>{profile.name}</strong> with the same rules as the algo, and you get a
+              verdict: Buy, Watch or Avoid, with the rules and chart behind it.
             </>
           }
         />
@@ -151,8 +151,9 @@ export function MyPicksTab({
               {items.length > 0 && (
                 <>
                   {' · '}
-                  <span className="text-brand-dark">{passes} pass</span> ·{' '}
-                  <span className="text-loss">{fails} fail</span>
+                  <span className="text-brand-dark">{countOf('buy')} buy</span> ·{' '}
+                  <span className="text-amber-700">{countOf('watch')} watch</span> ·{' '}
+                  <span className="text-loss">{countOf('avoid')} avoid</span>
                   {errors > 0 && ` · ${errors} not found`}
                 </>
               )}

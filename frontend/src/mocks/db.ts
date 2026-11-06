@@ -33,6 +33,9 @@ import type {
   ReviewTag,
   Run,
   StockDetail,
+  Overall,
+  Trend,
+  Verdict,
   WatchlistItem,
   WatchlistMiss,
   WatchlistResults,
@@ -113,7 +116,13 @@ const INDUSTRIES: Record<string, string> = {
 
 const suggestionId = (profileId: number, index: number): number => profileId * 100 + index + 1;
 
-function baseSummaries(): Omit<SuggestionSummary, 'id' | 'rank' | 'is_tracked' | 'position_id'>[] {
+/** A summary before its verdict is attached. */
+type Unverdicted = Omit<SuggestionSummary, 'verdict'>;
+
+function baseSummaries(): Omit<
+  SuggestionSummary,
+  'id' | 'rank' | 'is_tracked' | 'position_id' | 'verdict'
+>[] {
   return SUGGESTION_SEEDS.map((s) => ({
     ...s,
     source: 'run' as const,
@@ -138,13 +147,17 @@ function suggestionsFor(profile: Profile): SuggestionSummary[] {
     .slice(0, topN);
   return kept.map(({ s, index }, i) => {
     const pos = isTracked(profile.id, s.symbol);
-    return {
-      ...s,
-      id: suggestionId(profile.id, index),
-      rank: i + 1,
-      is_tracked: !!pos,
-      position_id: pos?.id ?? null,
-    };
+    return withVerdict(
+      {
+        ...s,
+        id: suggestionId(profile.id, index),
+        rank: i + 1,
+        is_tracked: !!pos,
+        position_id: pos?.id ?? null,
+      },
+      profile,
+      true,
+    );
   });
 }
 
@@ -168,7 +181,7 @@ function syntheticSummary(
   const entry = round(close * 0.98, 1);
   const stop = round(close * 0.92, 1);
   const target = round(close * 1.14, 1);
-  return {
+  const base: Unverdicted = {
     id,
     source: 'explore',
     symbol,
@@ -192,7 +205,26 @@ function syntheticSummary(
     is_tracked: !!isTracked(profile.id, symbol),
     position_id: isTracked(profile.id, symbol)?.id ?? null,
   };
+  return withVerdict(base, profile, false);
 }
+
+/** ema_trend from the last ~63 sessions of the chart, so mock trends vary realistically. */
+function trendOf(chart: ChartData): string {
+  const n = chart.close.length;
+  if (n < 2) return 'SIDEWAYS';
+  const change = (chart.close[n - 1] / chart.close[Math.max(0, n - 64)] - 1) * 100;
+  return change > 12
+    ? 'STRONG_UPTREND'
+    : change > 4
+      ? 'UPTREND'
+      : change < -4
+        ? 'DOWNTREND'
+        : 'SIDEWAYS';
+}
+const isDown = (t: string | null) =>
+  t === 'STRONG_DOWNTREND' || t === 'BELOW_200EMA' || t === 'DOWNTREND';
+const isUp = (t: string | null) =>
+  t === 'STRONG_UPTREND' || t === 'ABOVE_200EMA' || t === 'UPTREND';
 
 function buildIndicators(
   symbol: string,
@@ -207,17 +239,20 @@ function buildIndicators(
   return {
     rsi,
     macd_signal: rand() > 0.3 ? 'BULLISH' : 'NEUTRAL',
-    ema_trend: rand() > 0.35 ? 'STRONG_UPTREND' : 'UPTREND',
+    ema_trend: trendOf(chart),
     ema20: last(chart.ema20),
     ema50: last(chart.ema50),
-    ema200: round(price * 0.86, 2),
+    ema200: round(
+      price * (isDown(trendOf(chart)) ? 1.07 : trendOf(chart) === 'SIDEWAYS' ? 1.01 : 0.86),
+      2,
+    ),
     atr: round(price * 0.023, 1),
     bb_position: `${bb > 66 ? 'UPPER' : bb < 33 ? 'LOWER' : 'MID'} (${bb}% from lower band)`,
     volume_ratio: volumeRatio,
   };
 }
 
-function buildFundamentals(s: SuggestionSummary): Fundamentals {
+function buildFundamentals(s: Unverdicted): Fundamentals {
   const rand = seeded(`fund:${s.symbol}`);
   const profit = s.profit_yoy_pct;
   return {
@@ -322,32 +357,130 @@ function buildReasons(s: SuggestionSummary, rsi: number | null): SuggestionDetai
   };
 }
 
+/** Every hard rule that could be evaluated; a rule whose metric is unavailable is skipped, not failed. */
+function evaluateRules(
+  s: Unverdicted,
+  f: Fundamentals,
+  ind: Indicators,
+  p: Params,
+): { total: number; failures: string[] } {
+  const failures: string[] = [];
+  let total = 0;
+  const rule = (available: boolean, failed: () => boolean, text: () => string) => {
+    if (!available) return;
+    total++;
+    if (failed()) failures.push(text());
+  };
+  rule(
+    true,
+    () => s.score < Number(p.min_score),
+    () => `Score ${s.score} below min ${p.min_score}`,
+  );
+  rule(
+    f.pe !== null,
+    () => (f.pe ?? 0) > Number(p.max_pe),
+    () => `P/E ${round(f.pe ?? 0, 0)} above max ${p.max_pe}`,
+  );
+  rule(
+    f.roe_pct !== null,
+    () => (f.roe_pct ?? 0) < Number(p.min_roe_pct),
+    () => `ROE ${round(f.roe_pct ?? 0, 0)}% below min ${p.min_roe_pct}%`,
+  );
+  rule(
+    f.debt_to_equity !== null,
+    () => (f.debt_to_equity ?? 0) > Number(p.max_debt_to_equity),
+    () => `Debt/equity ${round(f.debt_to_equity ?? 0, 0)} above max ${p.max_debt_to_equity}`,
+  );
+  rule(
+    ind.rsi !== null,
+    () => (ind.rsi ?? 0) > Number(p.rsi_max),
+    () => `RSI ${round(ind.rsi ?? 0, 0)} above max ${p.rsi_max}`,
+  );
+  rule(
+    ind.rsi !== null,
+    () => (ind.rsi ?? 0) < Number(p.rsi_min),
+    () => `RSI ${round(ind.rsi ?? 0, 0)} below min ${p.rsi_min}`,
+  );
+  rule(
+    s.change_3m_pct !== null,
+    () => (s.change_3m_pct ?? 0) > Number(p.max_3m_runup_pct),
+    () => `3-month run-up ${s.change_3m_pct}% above max ${p.max_3m_runup_pct}%`,
+  );
+  rule(
+    s.profit_yoy_pct !== null,
+    () => (s.profit_yoy_pct ?? 0) < Number(p.min_profit_growth_pct),
+    () => `Profit growth ${round(s.profit_yoy_pct ?? 0, 0)}% below min ${p.min_profit_growth_pct}%`,
+  );
+  rule(
+    s.volume_ratio_20d !== null,
+    () => (s.volume_ratio_20d ?? 0) < Number(p.min_volume_ratio),
+    () => `Volume ${s.volume_ratio_20d}x 20-day average, below min ${p.min_volume_ratio}x`,
+  );
+  return { total, failures };
+}
+
 function checkFilters(
-  s: SuggestionSummary,
+  s: Unverdicted,
   f: Fundamentals,
   ind: Indicators,
   p: Params,
 ): SuggestionDetail['filters'] {
-  const failures: string[] = [];
-  if (s.score < Number(p.min_score)) failures.push(`Score ${s.score} below min ${p.min_score}`);
-  if (f.pe !== null && f.pe > Number(p.max_pe))
-    failures.push(`P/E ${round(f.pe, 0)} above max ${p.max_pe}`);
-  if (f.roe_pct !== null && f.roe_pct < Number(p.min_roe_pct))
-    failures.push(`ROE ${round(f.roe_pct, 0)}% below min ${p.min_roe_pct}%`);
-  if (ind.rsi !== null && ind.rsi > Number(p.rsi_max))
-    failures.push(`RSI ${round(ind.rsi, 0)} above max ${p.rsi_max}`);
-  if (ind.rsi !== null && ind.rsi < Number(p.rsi_min))
-    failures.push(`RSI ${round(ind.rsi, 0)} below min ${p.rsi_min}`);
-  if (s.change_3m_pct !== null && s.change_3m_pct > Number(p.max_3m_runup_pct))
-    failures.push(`3-month run-up ${s.change_3m_pct}% above max ${p.max_3m_runup_pct}%`);
-  if (s.profit_yoy_pct !== null && s.profit_yoy_pct < Number(p.min_profit_growth_pct))
-    failures.push(
-      `Profit growth ${round(s.profit_yoy_pct, 0)}% below min ${p.min_profit_growth_pct}%`,
-    );
+  const { failures } = evaluateRules(s, f, ind, p);
   // Informational notes: the backend may add these to `failures` while `passed` stays true.
   const notes: string[] = [];
   if (s.profit_yoy_pct === null) notes.push('Profit growth unavailable, filter skipped');
   return { passed: failures.length === 0, failures: failures.length ? failures : notes };
+}
+
+/** The contract's three-part verdict (section "Verdict"), computed deterministically from the stock's own numbers. */
+function verdictFor(s: Unverdicted, profile: Profile, passedAllRules: boolean): Verdict {
+  const chart = buildChart(s.symbol, s.price, s.change_3m_pct ?? 0);
+  const ind = buildIndicators(s.symbol, s.price, chart, s.volume_ratio_20d);
+  const rules = evaluateRules(s, buildFundamentals(s), ind, profile.params);
+  const failures = passedAllRules ? [] : rules.failures;
+  const trend: Trend = isUp(ind.ema_trend)
+    ? 'uptrend'
+    : isDown(ind.ema_trend)
+      ? 'downtrend'
+      : 'sideways';
+  const weak = s.signal.includes('Weak');
+  const phrase = weak
+    ? 'weak'
+    : s.signal.includes('Breakout Confirmed')
+      ? 'breakout confirmed'
+      : s.stage.toLowerCase();
+  const label = `${trend.charAt(0).toUpperCase()}${trend.slice(1)}, ${phrase}`;
+  const points = [
+    ind.ema200 !== null && s.price >= ind.ema200 ? 'Above 200-day EMA' : 'Below 200-day EMA',
+    ...(ind.rsi !== null ? [`RSI ${round(ind.rsi, 0)}`] : []),
+    ...(s.volume_ratio_20d !== null ? [`Volume ${s.volume_ratio_20d}x`] : []),
+  ];
+  const goodSignal = ['Early Setup', 'Breakout Confirmed', 'Developing'].some((x) =>
+    s.signal.includes(x),
+  );
+  const overall: Overall =
+    weak ||
+    trend === 'downtrend' ||
+    (s.profit_yoy_pct !== null && s.profit_yoy_pct < 0) ||
+    failures.length > 2
+      ? 'avoid'
+      : failures.length === 0 && trend === 'uptrend' && goodSignal
+        ? 'buy'
+        : 'watch';
+  return {
+    overall,
+    rules: { passed: rules.total - failures.length, total: rules.total, failures },
+    chart: { trend, label, points },
+    reason: `${failures[0] ?? 'Passes all rules'}; ${label.charAt(0).toLowerCase()}${label.slice(1)}.`,
+  };
+}
+
+function withVerdict<T extends Unverdicted>(
+  s: T,
+  profile: Profile,
+  passedAllRules: boolean,
+): T & { verdict: Verdict } {
+  return { ...s, verdict: verdictFor(s, profile, passedAllRules) };
 }
 
 function buildDetail(
@@ -591,7 +724,11 @@ function buildPosition(s: PositionSeed): PositionDetail {
   const base = baseSummaries()[seedIndex];
   const summary: SuggestionSummary | null =
     base && s.suggestionId !== null
-      ? { ...base, id: s.suggestionId, rank: seedIndex + 1, is_tracked: true, position_id: s.id }
+      ? withVerdict(
+          { ...base, id: s.suggestionId, rank: seedIndex + 1, is_tracked: true, position_id: s.id },
+          PROFILE_SEEDS[0],
+          true,
+        )
       : null;
   const d: PositionDetail = {
     id: s.id,
@@ -1145,15 +1282,21 @@ export function getSuggestionDetail(id: number): SuggestionDetail {
   const index = (id % 100) - 1;
   const fallback = SUGGESTION_SEEDS[index];
   if (!item && !fallback) fail(404, `Suggestion ${id} not found`);
-  const summary: SuggestionSummary = item ?? {
-    ...fallback,
-    id,
-    source: 'run',
-    rank: index + 1,
-    risk_reward: riskReward(fallback),
-    is_tracked: !!isTracked(profile.id, fallback.symbol),
-    position_id: isTracked(profile.id, fallback.symbol)?.id ?? null,
-  };
+  const summary: SuggestionSummary =
+    item ??
+    withVerdict(
+      {
+        ...fallback,
+        id,
+        source: 'run',
+        rank: index + 1,
+        risk_reward: riskReward(fallback),
+        is_tracked: !!isTracked(profile.id, fallback.symbol),
+        position_id: isTracked(profile.id, fallback.symbol)?.id ?? null,
+      },
+      profile,
+      true,
+    );
   return buildDetail(summary, profile, false);
 }
 

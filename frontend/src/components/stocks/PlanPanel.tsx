@@ -27,7 +27,7 @@ function EntryCard({
         {label}
         {highlight && (
           <span className="rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-white">
-            Recommended
+            Optimal
           </span>
         )}
       </div>

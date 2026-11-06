@@ -1,6 +1,6 @@
 // The big stock dialog: why it is listed, analysis over time, buy plan, exit plan. Used by both Stocks tabs.
 // "suggested" opens a saved suggestion; "analyze" scores any NSE stock on demand under the active strategy.
-// The filters panel shows for anything not taken from the algo's own list (Explore and My Picks).
+// A verdict banner (Overall, reason, Rules and Chart sub-verdicts) sits directly under the header for every stock.
 import { CheckCircle2, Info, Loader2, XCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAnalysis } from '../../hooks/useStocks';
@@ -21,6 +21,7 @@ import { ScoreBreakdown } from './ScoreBreakdown';
 import { ScoreRing } from './ScoreRing';
 import { SignalBadge } from './SignalBadge';
 import { TrackButton } from './TrackButton';
+import { OverallBadge, RulesBadge, TrendArrow } from './VerdictParts';
 
 export type StockSelection =
   { kind: 'suggested'; id: number; symbol: string } | { kind: 'analyze'; symbol: string };
@@ -39,47 +40,78 @@ function Section({ n, title, children }: { n: number; title: string; children: R
   );
 }
 
-function FiltersPanel({ detail, profileName }: { detail: SuggestionDetail; profileName: string }) {
-  const { passed, failures } = detail.filters;
-  // When `passed` is true the backend may still list informational notes ("ROE unavailable, filter skipped").
-  // They are not failures, so they are shown muted.
+function VerdictBanner({
+  detail,
+  strategyName,
+}: {
+  detail: SuggestionDetail;
+  strategyName: string | null;
+}) {
+  const { verdict, filters } = detail;
+  // `filters` may carry informational notes while it passes ("ROE unavailable, filter skipped"): not failures.
+  const notes = filters.passed ? filters.failures : [];
   return (
-    <div
-      className={
-        passed
-          ? 'mx-5 mb-5 rounded-lg border border-brand/30 bg-brand-soft/60 p-4'
-          : 'mx-5 mb-5 rounded-lg border border-loss/30 bg-loss-soft p-4'
-      }
-      role="status"
-    >
-      <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
-        {passed ? (
-          <CheckCircle2 className="h-4 w-4 text-brand" aria-hidden />
-        ) : (
-          <XCircle className="h-4 w-4 text-loss" aria-hidden />
-        )}
-        {passed
-          ? `Passes every filter in ${profileName}`
-          : `Would not be suggested under ${profileName}`}
-      </h3>
-      {failures.length > 0 &&
-        (passed ? (
-          <ul className="mt-2 space-y-0.5 pl-6 text-xs text-ink-muted" aria-label="Notes">
-            {failures.map((note) => (
-              <li key={note} className="flex gap-1.5">
-                <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
-                {note}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <ul className="mt-2 list-disc space-y-0.5 pl-9 text-sm text-ink">
-            {failures.map((f) => (
-              <li key={f}>{f}</li>
-            ))}
-          </ul>
-        ))}
-    </div>
+    <section aria-label="Verdict" className="border-t border-line bg-slate-50/60 px-5 py-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <OverallBadge verdict={verdict} large />
+        <p className="min-w-0 flex-1 text-sm text-ink">{verdict.reason}</p>
+        {strategyName && <span className="text-xs text-ink-muted">under {strategyName}</span>}
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-lg border border-line bg-white p-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Rules</h3>
+            <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <RulesBadge rules={verdict.rules} /> pass
+            </span>
+          </div>
+          {verdict.rules.failures.length === 0 ? (
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-ink">
+              <CheckCircle2 className="h-4 w-4 text-brand" aria-hidden /> Every rule that could be
+              evaluated passes.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1">
+              {verdict.rules.failures.map((f) => (
+                <li key={f} className="flex gap-1.5 text-sm text-ink">
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-loss" aria-hidden />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          )}
+          {notes.length > 0 && (
+            <ul className="mt-2 space-y-0.5 text-xs text-ink-muted" aria-label="Notes">
+              {notes.map((note) => (
+                <li key={note} className="flex gap-1.5">
+                  <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                  {note}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="rounded-lg border border-line bg-white p-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Chart</h3>
+          <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-ink">
+            <TrendArrow trend={verdict.chart.trend} />
+            {verdict.chart.label}
+          </p>
+          {verdict.chart.points.length > 0 && (
+            <ul className="mt-1.5 flex flex-wrap gap-1.5">
+              {verdict.chart.points.map((pt) => (
+                <li
+                  key={pt}
+                  className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-ink-muted"
+                >
+                  {pt}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -180,11 +212,7 @@ export function StockDialog({
             <LoadingBody analyzing={analyzing} />
           ) : (
             <>
-              {(analyzing || detail.source !== 'run') && profile && (
-                <div className="border-t border-line pt-5">
-                  <FiltersPanel detail={detail} profileName={profile.name} />
-                </div>
-              )}
+              <VerdictBanner detail={detail} strategyName={profile?.name ?? null} />
               <Section n={1} title="Why it is listed">
                 <ReasonsPanel reasons={detail.reasons} />
               </Section>
@@ -207,12 +235,26 @@ export function StockDialog({
                   <FundamentalsGrid data={detail.fundamentals} />
                 </div>
               </Section>
-              <Section n={3} title="When and at what price to buy">
-                <BuyPlan plan={detail.plan} close={detail.price} />
-              </Section>
-              <Section n={4} title="Planned exit">
-                <ExitPlan plan={detail.plan} />
-              </Section>
+              {detail.verdict.overall === 'avoid' && (
+                <p
+                  role="note"
+                  className="flex items-center gap-2 border-t border-line bg-slate-50 px-5 py-3 text-sm font-medium text-ink-muted"
+                >
+                  <Info className="h-4 w-4 shrink-0" aria-hidden />
+                  Plan shown for reference only; the verdict is Avoid.
+                </p>
+              )}
+              <div
+                className={detail.verdict.overall === 'avoid' ? 'opacity-50' : undefined}
+                data-testid="plan-sections"
+              >
+                <Section n={3} title="When and at what price to buy">
+                  <BuyPlan plan={detail.plan} close={detail.price} />
+                </Section>
+                <Section n={4} title="Planned exit">
+                  <ExitPlan plan={detail.plan} />
+                </Section>
+              </div>
               <footer className="border-t border-line px-5 py-4">
                 <p className="text-xs italic text-ink-muted">{detail.plan.disclaimer}</p>
               </footer>

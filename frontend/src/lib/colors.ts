@@ -1,5 +1,5 @@
 // Colours for badges and signed numbers. Signal strings are matched on their label text (see "Enumerations" in the contract).
-export type Tone = 'green' | 'amber' | 'blue' | 'orange' | 'red' | 'grey';
+export type Tone = 'green' | 'amber' | 'blue' | 'orange' | 'red' | 'grey' | 'greyRed';
 
 export const TONE_CLASSES: Record<Tone, string> = {
   green: 'bg-brand-soft text-brand-dark',
@@ -8,6 +8,7 @@ export const TONE_CLASSES: Record<Tone, string> = {
   orange: 'bg-orange-100 text-orange-800',
   red: 'bg-loss-soft text-loss',
   grey: 'bg-slate-100 text-slate-600',
+  greyRed: 'bg-slate-100 text-loss',
 };
 
 /** 🟢 Early Setup green, 🟡 Developing amber, 🔵 Breakout Confirmed blue, 🟠 Extended orange, 🔴 Weak / Invalidated grey. */
