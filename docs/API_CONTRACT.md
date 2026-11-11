@@ -482,6 +482,31 @@ export interface Experiment { id: number; name: string; hypothesis: string; base
 
 ---
 
+## Intraday (DRAFT: UI on mocks only, backend not started)
+
+Mock at https://claude.ai/artifact/5dY5GzavTSMAivhC6VLkpn (five screens). The app gains a top-level mode switch **Positional | Intraday** above the sidebar; the sidebar under Intraday is Today, Paper trades, Playbook, Backtest, Scorecard. Routes `/intraday`, `/intraday/trades`, `/intraday/playbook`, `/intraday/backtest`, `/intraday/scorecard`. The chosen mode is kept in `localStorage` (`mode`). Endpoints below are the shape the backend will implement; until then the frontend serves them from mocks regardless of `VITE_USE_MOCKS` (an `intradayMocks` flag, default on).
+
+`GET /intraday/today` → `IntradayToday` (poll every 5 s during market hours). `GET /intraday/signals/{id}` → `IntradaySignal`. `POST /intraday/trades` body `{ signal_id }` → 201 `IntradayTrade`. `POST /intraday/trades/{id}/exit` body `{ reason?: string; fraction?: 1 | 0.5 }` → `IntradayTrade`. `GET /intraday/trades?day=` → `{ open: IntradayTrade[]; signals: IntradaySignal[]; days: IntradayDay[] }`. `GET /intraday/playbook` → `Playbook`; `PUT /intraday/playbook` → `Playbook`. `GET /intraday/scorecard?days=20` → `IntradayScorecard`.
+
+```ts
+export type SetupState = 'waiting' | 'armed' | 'triggered' | 'in_trade' | 'exited' | 'failed' | 'skip';
+export type SignalKind = 'range_breakout' | 'vwap_pullback';
+export interface MarketPulse { time: string; nifty: number; nifty_change_pct: number; nifty_above_opening_range: boolean | null; vix: number | null; advances: number | null; declines: number | null; regime: Regime; }
+export interface SureDayCheck { label: string; points: number; earned: number; }
+export interface SureDay { score: number; threshold: number; trade_day: boolean; checks: SureDayCheck[]; }
+export interface StockInPlay { symbol: string; price: number; gap_pct: number; rel_volume: number; score: number; why: string; state: SetupState; state_note: string; range_high: number | null; range_low: number | null; }
+export interface IntradaySignal { id: number; time: string; symbol: string; kind: SignalKind; score: number; buy: number; buy_limit: number; qty: number; invested: number; stop: number; target: number; risk_rs: number; reward_rs: number; r_multiple: number; valid_until: string; square_off_at: string; why: string; checks: { label: string; passed: boolean; half?: boolean }[]; cancel_if: string; plain_words: string; confidence: { label: 'low' | 'medium' | 'high'; score: number; backtest_win_rate_pct: number | null; backtest_trades: number | null; backtest_avg_r: number | null }; chart: { time: string; open: number; high: number; low: number; close: number; volume: number; vwap: number | null }[]; taken: boolean; outcome_note: string | null; }
+export interface RiskToday { capital: number; leverage: number; buying_power: number; max_trades: number; trades_used: number; stop_after_losses: number; max_risk_rs: number; entry_windows: string[]; square_off_at: string; day_pnl: number; day_target_rs: number; }
+export interface TimelineEvent { time: string; text: string; done: boolean; }
+export interface IntradayToday { day: string; market_open: boolean; pulse: MarketPulse; sure_day: SureDay; stocks: StockInPlay[]; hidden_below_line: number; signals: IntradaySignal[]; risk: RiskToday; timeline: TimelineEvent[]; feed: { source: string; lag_seconds: number | null } | null; }
+export interface IntradayTrade { id: number; signal_id: number; symbol: string; entered_at: string; qty: number; entry: number; stop: number; stop_moved_to_breakeven_at: string | null; target: number; last: number; pnl: number; pnl_pct_of_capital: number; progress_pct: number; engine_says: string; next_check: string; exited_at: string | null; exit_price: number | null; exit_reason: 'target' | 'stop' | 'time' | 'manual' | 'rule' | null; }
+export interface IntradayDay { day: string; sure_day_score: number; traded: boolean; trades: { symbol: string; pnl: number }[]; pnl: number; capital_after: number; hit_target: boolean | null; note: string; }
+export interface Playbook { id: number; name: string; in_play: { min_gap_pct: number; min_rel_volume: number; needs_catalyst: boolean; min_turnover_cr: number; price_min: number; price_max: number; min_atr_pct: number; score_line: number }; entry: { range_minutes: number; confirm: string; min_breakout_volume: number; gap_direction_only: boolean; nifty_must_agree: boolean; max_chase_pct: number; windows: string[] }; risk: { stop_rule: string; target_r: number; breakeven_after_r: number; max_risk_pct: number; max_trades: number; stop_after_losses: number; square_off_at: string; leverage: number }; sure_day: { checks: { label: string; points: number }[]; threshold: number }; last_backtest: { days: number; traded_days: number; win_rate_pct: number; avg_win_rs: number; avg_loss_rs: number; net_rs: number; worst_run_rs: number; target_days: number; biggest_lever: string } | null; }
+export interface IntradayScorecard { days: number; started_rs: number; started_on: string; now_rs: number; days_traded: number; trades: number; wins: number; avg_win_rs: number; avg_loss_rs: number; target_days: number; worst_day: { day: string; pnl: number } | null; equity: { day: string; capital: number; traded: boolean }[]; live_vs_backtest: { metric: string; live: string; backtest: string }[]; drift_note: string | null; cuts: { label: string; signals: number; taken: number; win_rate_pct: number; avg_rs: number; suggests: string }[]; }
+```
+
+---
+
 ## Jobs (daily monitoring)
 
 `POST /jobs/daily-update` → 202 `{ "started": true }` (runs in background; 200 `{ "started": false, "reason": "already running" }`).
@@ -608,6 +633,8 @@ export interface JobStatus { brain: BrainStatus | null; running: boolean; last_d
 - Plan timing note: "Volume is picking up" may only be written when the volume ratio is ≥ 1.2; otherwise "Volume is quiet (0.3× average)". Fix in `plan_service`.
 - Backtests #1 to #3 ran on poisoned fundamentals: **delete them.** Strategy id 8: delete it only if the backend agent created it for a test and nothing references it; otherwise leave it.
 - New: "Backtest, plain mode" section above.
+
+- 2026-11-11 (guide): **Intraday (DRAFT)** section added for the frontend to build on mocks; backend not started; types may change when the data feed is decided.
 
 ### Open
 - 2026-11-05 (frontend): **`WatchlistItem` error rows contradict their type.** The prose says an unknown or unscorable symbol comes back with `error` set "and score fields null", but `WatchlistItem extends SuggestionSummary`, where `id`, `score`, `price`, `entry_optimal`, `stop_loss`, `target`, `risk_reward`, `horizon_days`, `stage`, `signal`, `planned_exit_date` are all non-null, and `filters: FilterResult` is required. An unknown symbol also has no persisted suggestion, so there is no real `id`. Proposal: a discriminated union, so neither side has to guess:
