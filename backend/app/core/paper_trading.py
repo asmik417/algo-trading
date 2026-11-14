@@ -145,17 +145,29 @@ class PaperPortfolio:
         return self.positions.get(symbol, 0)
 
     def add_fill(self, symbol: str, quantity: int, price: Money, fees: Money, side: str) -> None:
+        normalized_side = side.lower()
+        if quantity <= 0:
+            raise ValueError("fill quantity must be positive")
+        if normalized_side not in {"buy", "sell"}:
+            raise ValueError("fill side must be buy or sell")
+        current = self.positions.get(symbol, 0)
+        if normalized_side == "sell" and quantity > current:
+            raise ValueError("sell fill exceeds the open position")
+
         notional = to_money(price * quantity)
         total_cash_impact = to_money(notional + fees)
-        if side.lower() == "buy":
+        if normalized_side == "buy":
             self.cash -= total_cash_impact
         else:
             self.cash += to_money((price * quantity) - fees)
-        current = self.positions.get(symbol, 0)
-        self.positions[symbol] = current + (quantity if side.lower() == "buy" else -quantity)
+        remaining = current + (quantity if normalized_side == "buy" else -quantity)
+        if remaining:
+            self.positions[symbol] = remaining
+        else:
+            self.positions.pop(symbol, None)
         self.record({
             "symbol": symbol,
-            "side": side,
+            "side": normalized_side,
             "quantity": quantity,
             "price": str(price),
             "fees": str(fees),
@@ -198,7 +210,7 @@ class PaperBroker(BrokerPort):
 
     def submit_order(self, order: PaperOrder) -> PaperOrder:
         if order.order_id in self.orders:
-            return self._reject(order, "duplicate_order_id")
+            return self.orders[order.order_id]
         if self.risk_config.kill_switch:
             return self._reject(order, "risk_kill_switch")
         if order.quantity <= 0:
@@ -211,14 +223,22 @@ class PaperBroker(BrokerPort):
         if available <= 0:
             return self._reject(order, "missing_market_price")
 
+        open_quantity = self.portfolio.position_qty(order.symbol)
+        if order.side.lower() == "sell" and order.quantity > open_quantity:
+            return self._reject(order, "insufficient_position")
+
         if self.execution_mode == "paper-manual-approval" and order.metadata.get("manual_approval") is not True:
             order.status = "pending_approval"
             self.orders[order.order_id] = order
             return order
 
         if self.risk_config.max_open_positions > 0:
-            open_positions = len(self.portfolio.positions)
-            if order.side.lower() == "buy" and open_positions >= self.risk_config.max_open_positions:
+            open_positions = sum(quantity > 0 for quantity in self.portfolio.positions.values())
+            if (
+                order.side.lower() == "buy"
+                and open_quantity == 0
+                and open_positions >= self.risk_config.max_open_positions
+            ):
                 return self._reject(order, "max_open_positions_reached")
 
         order.status = "filled"
