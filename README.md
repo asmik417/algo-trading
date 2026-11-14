@@ -6,15 +6,15 @@ A paper-trading strategy lab for NSE stocks. You set the rules a trader screens 
 
 ## What it does
 
-| Module | What you do there |
-|---|---|
-| **Strategies** | Set and save the screening parameters: liquidity, fundamentals, technicals, scoring weights, holding horizon, stop and target rules. Research-backed defaults are seeded. |
-| **Stocks → Algo Suggested** | Run the algo under the active strategy. Each pick shows score, stage, signal, entry levels, stop-loss, target and planned exit date. Click a row for the full analysis and reasons. |
-| **Stocks → Explore** | Search every NSE stock and analyse any one of them under your rules. |
-| **Stocks → My Picks** | Paste a list of symbols and analyse them together; see which pass and why the rest fail. |
-| **Tracker** | Track a pick with ₹10,000 of paper money. Marked to market daily, auto-closed on stop or target, flagged when the exit date arrives. Extending or shortening requires a written reason. |
-| **Loss Analysis** | Every losing position gets a tagged review: what went wrong, the lesson, and what should change in the rules. |
-| **Holdings** | Placeholder for the future live-trading module. |
+| Module                      | What you do there                                                                                                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Strategies**              | Set and save the screening parameters: liquidity, fundamentals, technicals, scoring weights, holding horizon, stop and target rules. Research-backed defaults are seeded.               |
+| **Stocks → Algo Suggested** | Run the algo under the active strategy. Each pick shows score, stage, signal, entry levels, stop-loss, target and planned exit date. Click a row for the full analysis and reasons.     |
+| **Stocks → Explore**        | Search every NSE stock and analyse any one of them under your rules.                                                                                                                    |
+| **Stocks → My Picks**       | Paste a list of symbols and analyse them together; see which pass and why the rest fail.                                                                                                |
+| **Tracker**                 | Track a pick with ₹10,000 of paper money. Marked to market daily, auto-closed on stop or target, flagged when the exit date arrives. Extending or shortening requires a written reason. |
+| **Loss Analysis**           | Every losing position gets a tagged review: what went wrong, the lesson, and what should change in the rules.                                                                           |
+| **Holdings**                | Placeholder for the future live-trading module.                                                                                                                                         |
 
 ## How the algo works
 
@@ -64,3 +64,5 @@ The first run downloads missing bhavcopy days from NSE and takes a few minutes; 
 - `docs/PRODUCT.md` for the why, vocabulary and success metrics.
 - `docs/ARCHITECTURE.md` for the stack and folder layout.
 - `docs/API_CONTRACT.md` for every endpoint and type.
+
+DEBI COPY
